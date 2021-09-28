@@ -1,7 +1,7 @@
 ---
 # https://docs.nextcloud.com/server/18/admin_manual/installation/source_installation.html#prerequisites-for-manual-installation
 - name: Install list of prerequired php modules
-  apt:
+  package:
     name:
       - php{{ php_fpm_version }}-curl
       - php{{ php_fpm_version }}-dom
@@ -19,7 +19,6 @@
       - php{{ php_fpm_version }}-xml
       - php{{ php_fpm_version }}-zip
     update_cache: yes
-    cache_valid_time: 3600
 
 - name: Make sure destination folder exists
   file:
