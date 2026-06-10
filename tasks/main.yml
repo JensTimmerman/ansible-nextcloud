@@ -27,6 +27,12 @@
     owner: "{{ nextcloud_dir_user }}"
     group: "{{ nextcloud_dir_group }}"
 
+- name: Check installed Nextcloud version
+  command: grep "OC_VersionString" {{ nextcloud_destination }}/nextcloud/version.php
+  register: installed_version
+  failed_when: false
+  changed_when: false
+
 - name: Download nextcloud
   unarchive:
     src: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
@@ -34,6 +40,8 @@
     remote_src: yes
     owner: "{{ nextcloud_dir_user }}"
     group: "{{ nextcloud_dir_group }}"
+  when: nextcloud_version not in installed_version.stdout
+
 
 - name: Setup nextcloud cron to run every 5 minutes
   cron:
