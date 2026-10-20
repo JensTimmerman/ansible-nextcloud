@@ -55,6 +55,14 @@ nextcloud_php_packages_legacy:
   - "php{{ php_fpm_version }}-xml"
   - "php{{ php_fpm_version }}-zip"
 
+# Remove files that the target release no longer ships before extracting it
+# over the existing tree. Opt-in: it deletes files. Only release-owned
+# directories are touched (core dirs + shipped apps); config, data, themes,
+# third-party apps and top-level files are preserved. See files/prune_stale.py.
+nextcloud_prune_stale: false
+# Abort instead of deleting if more than this many stale files are found.
+nextcloud_stale_max_files: 5000
+
 # Enable backups with the following variable
 #
 # nextcloud_backup:
