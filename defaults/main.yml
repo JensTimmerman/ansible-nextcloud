@@ -63,6 +63,21 @@ nextcloud_prune_stale: false
 # Abort instead of deleting if more than this many stale files are found.
 nextcloud_stale_max_files: 5000
 
+# Fresh-install support. The role historically assumed an instance already
+# installed (by the web installer): config.php.j2 was empty. With
+# nextcloud_maintenance_install: true the role runs `occ maintenance:install`
+# when the target reports installed=false, then continues with the normal
+# configuration tasks. Idempotent: it only runs when not installed.
+nextcloud_maintenance_install: false
+nextcloud_db_type: "pgsql"
+nextcloud_db_host: "localhost"
+nextcloud_db_name: "nextcloud"
+nextcloud_db_user: "nextcloud"
+nextcloud_db_password: ""
+nextcloud_admin_user: "admin"
+nextcloud_admin_password: ""
+nextcloud_data_dir: "{{ nextcloud_destination }}/nextcloud/data"
+
 # Enable backups with the following variable
 #
 # nextcloud_backup:
