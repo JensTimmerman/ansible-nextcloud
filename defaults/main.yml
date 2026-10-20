@@ -6,6 +6,58 @@ nextcloud_dir_group: www-data
 # php.ini memory_limit parameter
 nextcloud_php_memory_limit: 512M
 
+
+# PHP packaging layout.
+#
+# nextcloud_php_packages: [] keeps the historical behaviour: the
+# php{{ php_fpm_version }}-<ext> names used by Debian/Ubuntu and by Remi's
+# SCL packages. On EL8/EL9 with the Remi MODULAR stream
+# (dnf module enable php:remi-8.x), the running php-fpm reads /etc/php.ini
+# and /etc/php.d, and the SCL packages are NOT loaded. There, use the
+# unprefixed modular names (the default below) - detected automatically
+# when /etc/php.d exists, or forced with nextcloud_php_modular.
+#
+# Override nextcloud_php_packages with an explicit list to take full control.
+nextcloud_php_packages: []
+# null = auto-detect (true when /etc/php.d exists), true/false = force.
+nextcloud_php_modular: null
+# Loaded php.ini for the non-modular layout. Empty = historical SCL path.
+nextcloud_php_ini_path: ""
+
+nextcloud_php_packages_modular:
+  - "php"
+  - "php-fpm"
+  - "php-opcache"
+  - "php-process"
+  - "php-gd"
+  - "php-intl"
+  - "php-mbstring"
+  - "php-mysqlnd"
+  - "php-pgsql"
+  - "php-xml"
+  - "php-zip"
+  - "php-gmp"
+  - "php-bcmath"
+  - "php-pecl-apcu"
+  - "php-pecl-imagick-im7"
+
+nextcloud_php_packages_legacy:
+  - "php{{ php_fpm_version }}-curl"
+  - "php{{ php_fpm_version }}-dom"
+  - "php{{ php_fpm_version }}-fileinfo"
+  - "php{{ php_fpm_version }}-gd"
+  - "php{{ php_fpm_version }}-iconv"
+  - "php{{ php_fpm_version }}-imagick"
+  - "php{{ php_fpm_version }}-intl"
+  - "php{{ php_fpm_version }}-json"
+  - "php{{ php_fpm_version }}-gmp"
+  - "php{{ php_fpm_version }}-bcmath"
+  - "php{{ php_fpm_version }}-mbstring"
+  - "php{{ php_fpm_version }}-mysql"
+  - "php{{ php_fpm_version }}-pgsql"
+  - "php{{ php_fpm_version }}-xml"
+  - "php{{ php_fpm_version }}-zip"
+
 # Enable backups with the following variable
 #
 # nextcloud_backup:

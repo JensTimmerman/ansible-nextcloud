@@ -1,24 +1,36 @@
 ---
 # https://docs.nextcloud.com/server/18/admin_manual/installation/source_installation.html#prerequisites-for-manual-installation
-- name: Install list of prerequired php modules
-  package:
-    name:
-      - php{{ php_fpm_version }}-curl
-      - php{{ php_fpm_version }}-dom
-      - php{{ php_fpm_version }}-fileinfo
-      - php{{ php_fpm_version }}-gd
-      - php{{ php_fpm_version }}-iconv
-      - php{{ php_fpm_version }}-imagick
-      - php{{ php_fpm_version }}-intl
-      - php{{ php_fpm_version }}-json
-      - php{{ php_fpm_version }}-gmp
-      - php{{ php_fpm_version }}-bcmath
-      - php{{ php_fpm_version }}-mbstring
-      - php{{ php_fpm_version }}-mysql
-      - php{{ php_fpm_version }}-pgsql
-      - php{{ php_fpm_version }}-xml
-      - php{{ php_fpm_version }}-zip
-    update_cache: yes
+- name: "Detect the modular PHP layout (Remi module stream)"
+  ansible.builtin.stat:
+    path: "/etc/php.d"
+  register: "nextcloud_php_d_dir"
+  changed_when: false
+
+- name: "Choose the PHP package layout"
+  ansible.builtin.set_fact:
+    nextcloud_php_modular_effective: >-
+      {{ nextcloud_php_modular if nextcloud_php_modular is not none
+         else (nextcloud_php_d_dir.stat.isdir | default(false)) }}
+
+- name: "Select the PHP package list"
+  ansible.builtin.set_fact:
+    nextcloud_php_packages_effective: >-
+      {{ nextcloud_php_packages if nextcloud_php_packages | length > 0
+         else (nextcloud_php_packages_modular
+               if nextcloud_php_modular_effective | bool
+               else nextcloud_php_packages_legacy) }}
+
+- name: "Select the loaded php.ini path"
+  ansible.builtin.set_fact:
+    nextcloud_php_ini_effective: >-
+      {{ nextcloud_php_ini_path if nextcloud_php_ini_path | length > 0
+         else ('/etc/php.ini' if nextcloud_php_modular_effective | bool
+               else '/etc/php/' ~ php_fpm_version ~ '/fpm/php.ini') }}
+
+- name: "Install the PHP packages required by Nextcloud"
+  ansible.builtin.package:
+    name: "{{ nextcloud_php_packages_effective }}"
+    update_cache: true
 
 - name: Make sure destination folder exists
   file:
@@ -50,12 +62,31 @@
     user: "{{ nextcloud_dir_user }}"
     job: "/usr/bin/php -f {{ nextcloud_destination }}/nextcloud/cron.php"
 
-- name: Configure PHP memory limit as recommended by Nextcloud
-  lineinfile:
-    path: "/etc/php/{{ php_fpm_version }}/fpm/php.ini"
-    regex: '^memory_limit ='
+# memory_limit: Nextcloud recommends at least 512M. The modular layout reads
+# /etc/php.d, so write a drop-in there; the legacy layout is edited in place.
+- name: "Configure the PHP memory limit (modular drop-in)"
+  ansible.builtin.template:
+    src: "php_memory_limit.ini.j2"
+    dest: "/etc/php.d/10-nextcloud-memory.ini"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+  when: nextcloud_php_modular_effective | bool
+
+- name: "Check the php.ini path for the legacy layout"
+  ansible.builtin.stat:
+    path: "{{ nextcloud_php_ini_effective }}"
+  register: "nextcloud_php_ini_stat"
+  when: not nextcloud_php_modular_effective | bool
+
+- name: "Configure the PHP memory limit in php.ini"
+  ansible.builtin.lineinfile:
+    path: "{{ nextcloud_php_ini_effective }}"
+    regexp: '^memory_limit ='
     line: "memory_limit = {{ nextcloud_php_memory_limit }}"
-  when: php_fpm_version is defined
+  when:
+    - not nextcloud_php_modular_effective | bool
+    - nextcloud_php_ini_stat.stat.exists | default(false)
 
 - name: Setup automatic daily backups
   include_tasks: backups.yml
