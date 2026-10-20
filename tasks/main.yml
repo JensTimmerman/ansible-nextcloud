@@ -20,12 +20,33 @@
       - php{{ php_fpm_version }}-zip
     update_cache: yes
 
+# unarchive (remote_src) needs tar plus bzip2 for the .tar.bz2 release.
+# Minimal EL9 containers ship neither, and the task fails with
+# "Unable to find required 'gtar' or 'tar' binary in the path".
+- name: "Ensure archive tools are installed"
+  ansible.builtin.package:
+    name:
+      - "tar"
+      - "bzip2"
+    state: "present"
+
 - name: Make sure destination folder exists
   file:
     path: "{{ nextcloud_destination }}"
     state: directory
     owner: "{{ nextcloud_dir_user }}"
     group: "{{ nextcloud_dir_group }}"
+
+# Create the install directory before any consumer (e.g. a php-fpm role
+# whose pool sets chdir) references it. unarchive would create it later,
+# but other roles run first in a typical play.
+- name: "Make sure the Nextcloud directory exists"
+  ansible.builtin.file:
+    path: "{{ nextcloud_destination }}/nextcloud"
+    state: "directory"
+    owner: "{{ nextcloud_dir_user }}"
+    group: "{{ nextcloud_dir_group }}"
+    mode: "0755"
 
 - name: Check installed Nextcloud version
   command: grep "OC_VersionString" {{ nextcloud_destination }}/nextcloud/version.php
