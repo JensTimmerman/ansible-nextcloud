@@ -1,3 +1,9 @@
+> **Status: unmaintained upstream.** The maintained, active fork is
+> [JensTimmerman/ansible-nextcloud](https://github.com/JensTimmerman/ansible-nextcloud).
+> It adds Remi modular PHP support (EL8/EL9), fresh-install support,
+> release-manifest pruning, and CI with Molecule on Rocky 9 and Ubuntu 24.04.
+> Please use the fork for fixes and new work.
+
 Nextcloud Ansible role
 =========
 
