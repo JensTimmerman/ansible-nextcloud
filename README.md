@@ -1,3 +1,9 @@
+> **Maintained fork.** This is the maintained fork of
+> [swcc/ansible-nextcloud](https://github.com/swcc/ansible-nextcloud), which is
+> unmaintained (last commit 2020). This fork adds Remi modular PHP support,
+> fresh-install support, release-manifest pruning and CI (Molecule on Rocky 9
+> and Ubuntu 24.04).
+
 
 ## php-fpm dependency
 
