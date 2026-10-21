@@ -1,5 +1,9 @@
 ---
 galaxy_info:
+  # Explicit Galaxy identity: the repository directory is `ansible-nextcloud`
+  # (hyphen), which ansible-compat/molecule cannot turn into a valid role name.
+  namespace: "jens"
+  role_name: "nextcloud"
   author: "Paul Bonaud"
   company: "swcc"
   description: "Install and configure Nextcloud"
