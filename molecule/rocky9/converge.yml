@@ -1,7 +1,8 @@
 ---
 - name: "Converge (Rocky 9, modular PHP)"
   hosts: "all"
-  become: true
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  become: false
   roles:
     - role: "nextcloud"
   vars:

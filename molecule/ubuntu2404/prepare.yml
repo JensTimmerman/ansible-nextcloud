@@ -1,7 +1,8 @@
 ---
 - name: "Prepare (Ubuntu 24.04)"
   hosts: "all"
-  become: true
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  become: false
   tasks:
     - name: "Install base tools"
       ansible.builtin.apt:

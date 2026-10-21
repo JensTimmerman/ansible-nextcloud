@@ -1,7 +1,8 @@
 ---
 - name: "Verify (Rocky 9, modular PHP)"
   hosts: "all"
-  become: true
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  become: false
   tasks:
     - name: "Stat the Nextcloud version file"
       ansible.builtin.stat:

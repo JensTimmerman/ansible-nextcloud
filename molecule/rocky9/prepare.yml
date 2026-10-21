@@ -1,7 +1,8 @@
 ---
 - name: "Prepare (Rocky 9 + Remi modular PHP)"
   hosts: "all"
-  become: true
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  become: false
   tasks:
     - name: "Install the Remi release package"
       ansible.builtin.dnf:
