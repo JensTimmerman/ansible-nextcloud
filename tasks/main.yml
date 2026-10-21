@@ -76,15 +76,83 @@
   failed_when: false
   changed_when: false
 
+- name: "Set the upgrade and release archive facts"
+  ansible.builtin.set_fact:
+    nextcloud_is_upgrade: >-
+      {{ (installed_version.stdout | default('') | trim | length > 0) and
+         (nextcloud_version not in installed_version.stdout) }}
+    nextcloud_release_archive: "{{ nextcloud_destination }}/nextcloud-{{ nextcloud_version }}.tar.bz2"
+
+# unarchive merges over the existing tree, so files removed between majors
+# persist. Compare the installed tree with the target release's file list
+# FIRST (shipped.json still describes the installed major), delete what the
+# release no longer ships, then extract. Opt-in via nextcloud_prune_stale.
+- name: "Download the target release archive for stale-file pruning"
+  ansible.builtin.get_url:
+    url: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
+    dest: "{{ nextcloud_release_archive }}"
+    mode: "0644"
+  when:
+    - nextcloud_prune_stale | bool
+    - nextcloud_is_upgrade | bool
+
+- name: "Download the release checksum"
+  ansible.builtin.get_url:
+    url: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2.sha256"
+    dest: "{{ nextcloud_release_archive }}.sha256"
+    mode: "0644"
+  when:
+    - nextcloud_prune_stale | bool
+    - nextcloud_is_upgrade | bool
+
+- name: "Verify the release archive checksum"
+  ansible.builtin.command:
+    cmd: "sha256sum -c {{ nextcloud_release_archive | basename }}.sha256"
+    chdir: "{{ nextcloud_destination }}"
+  changed_when: false
+  when:
+    - nextcloud_prune_stale | bool
+    - nextcloud_is_upgrade | bool
+
+- name: "Prune files the target release no longer ships"
+  ansible.builtin.script:
+    cmd: >-
+      prune_stale.py --root {{ nextcloud_destination }}/nextcloud
+      --tarball {{ nextcloud_release_archive }}
+      --max {{ nextcloud_stale_max_files }}
+  register: "nextcloud_prune_result"
+  changed_when: "(nextcloud_prune_result.stdout | from_json).removed | default(0) | int > 0"
+  when:
+    - nextcloud_prune_stale | bool
+    - nextcloud_is_upgrade | bool
+
+- name: "Report the stale files that were removed"
+  ansible.builtin.debug:
+    var: "nextcloud_prune_result.stdout | from_json"
+  when: >-
+    nextcloud_prune_result is defined and
+    nextcloud_prune_result.stdout is defined and
+    nextcloud_prune_result.stdout | length > 0
+
 - name: Download nextcloud
   ansible.builtin.unarchive:
-    src: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
+    src: >-
+      {{ nextcloud_release_archive if (nextcloud_prune_stale | bool and nextcloud_is_upgrade | bool)
+         else 'https://download.nextcloud.com/server/releases/nextcloud-' ~ nextcloud_version ~ '.tar.bz2' }}
     dest: "{{ nextcloud_destination }}"
     remote_src: true
     owner: "{{ nextcloud_dir_user }}"
     group: "{{ nextcloud_dir_group }}"
     mode: "0755"
   when: nextcloud_version not in installed_version.stdout
+
+- name: "Remove the downloaded release archive"
+  ansible.builtin.file:
+    path: "{{ nextcloud_release_archive }}"
+    state: "absent"
+  when:
+    - nextcloud_prune_stale | bool
+    - nextcloud_is_upgrade | bool
 
 
 - name: Setup nextcloud cron to run every 5 minutes

@@ -14,6 +14,7 @@
       loop:
         - {key: "retries", value: "10"}
         - {key: "timeout", value: "60"}
+        - {key: "fastestmirror", value: "True"}
 
     - name: "Install the Remi release package"
       ansible.builtin.dnf:
@@ -24,6 +25,18 @@
       retries: 5
       delay: 20
       until: "remi_release_install is succeeded"
+    # The 2026-10-21 PHP emergency release (PHP2Shell) overloaded the Remi
+    # primary; fastestmirror uses the mirrorlist instead. Refresh once, with
+    # retries, before the module commands.
+    - name: "Refresh dnf metadata"
+      ansible.builtin.command:
+        cmd: "dnf -y --setopt=fastestmirror=True makecache --refresh"
+      register: "dnf_makecache"
+      changed_when: false
+      retries: 4
+      delay: 30
+      until: "dnf_makecache.rc == 0"
+
     - name: "Reset the php module"
       ansible.builtin.command:
         cmd: "dnf -y --setopt=retries=5 --setopt=timeout=30 module reset php"
