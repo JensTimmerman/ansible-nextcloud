@@ -1,0 +1,48 @@
+---
+- name: "Verify (Rocky 9, modular PHP)"
+  hosts: "all"
+  become: true
+  tasks:
+    - name: "Stat the Nextcloud version file"
+      ansible.builtin.stat:
+        path: "/var/www/nextcloud/version.php"
+      register: "version_file"
+    - name: "Assert the release was extracted"
+      ansible.builtin.assert:
+        that:
+          - "version_file.stat.exists"
+    - name: "Read the installed version"
+      ansible.builtin.command:
+        cmd: "grep OC_VersionString /var/www/nextcloud/version.php"
+      register: "version_grep"
+      changed_when: false
+    - name: "Assert the target version"
+      ansible.builtin.assert:
+        that:
+          - "'35.0.2' in version_grep.stdout"
+    - name: "Stat the generated config.php"
+      ansible.builtin.stat:
+        path: "/var/www/nextcloud/config/config.php"
+      register: "config_file"
+    - name: "Assert config.php exists"
+      ansible.builtin.assert:
+        that:
+          - "config_file.stat.exists"
+    - name: "Read the modular php memory drop-in"
+      ansible.builtin.slurp:
+        src: "/etc/php.d/10-nextcloud-memory.ini"
+      register: "memory_ini"
+    - name: "Assert the memory limit is configured"
+      ansible.builtin.assert:
+        that:
+          - "'512M' in (memory_ini.content | b64decode)"
+    - name: "Read the root crontab"
+      ansible.builtin.command:
+        cmd: "crontab -l -u root"
+      register: "root_cron"
+      changed_when: false
+      failed_when: false
+    - name: "Assert the Nextcloud cron entry exists"
+      ansible.builtin.assert:
+        that:
+          - "'nextcloud/cron.php' in root_cron.stdout"

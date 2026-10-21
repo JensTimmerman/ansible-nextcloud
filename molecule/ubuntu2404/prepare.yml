@@ -1,0 +1,17 @@
+---
+- name: "Prepare (Ubuntu 24.04)"
+  hosts: "all"
+  become: true
+  tasks:
+    - name: "Install base tools"
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - "tar"
+          - "bzip2"
+          - "sudo"
+          - "cron"
+          - "ca-certificates"
+          - "gnupg"
+          - "software-properties-common"
+        state: "present"

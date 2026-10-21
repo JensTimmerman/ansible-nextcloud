@@ -1,5 +1,6 @@
 ---
-- hosts: localhost
-  become: yes
+- name: "Converge the nextcloud role on localhost"
+  hosts: "localhost"
+  become: true
   roles:
-    - role: nextcloud
+    - role: "nextcloud"

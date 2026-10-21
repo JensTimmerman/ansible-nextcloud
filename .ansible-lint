@@ -1,0 +1,13 @@
+---
+# The repository is named ansible-nextcloud (hyphen). Galaxy role names use
+# underscores, so ansible-lint cannot derive a valid role name from the
+# checkout directory. The role is consumed by repository URL, not Galaxy.
+skip_list:
+  - "role-name"
+exclude_paths:
+  - ".ansible"
+  - ".molecule"
+  # tests/roles/nextcloud and molecule/*/roles/nextcloud are symlinks to the
+  # role root; linting them would recurse.
+  - "tests/roles"
+  - "molecule/*/roles"

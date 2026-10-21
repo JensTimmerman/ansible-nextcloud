@@ -1,29 +1,28 @@
+---
 galaxy_info:
-  author: Paul Bonaud
-  company: swcc
+  author: "Paul Bonaud"
+  company: "swcc"
   description: "Install and configure Nextcloud"
-  min_ansible_version: 2.4.0
-  license: GPL
-
+  min_ansible_version: "2.4.0"
+  license: "GPL"
   platforms:
-  - name: Debian
-    versions:
-    - stretch
-    - buster
-  - name: Ubuntu
-    versions:
-    - xenial
-    - bionic
-
+    - name: "Debian"
+      versions:
+        - "stretch"
+        - "buster"
+    - name: "Ubuntu"
+      versions:
+        - "xenial"
+        - "bionic"
   galaxy_tags:
-  - nextcloud
-  - owncloud
-  - php-fpm
-  - postgis
-  - debian
-  - ubuntu
+    - "nextcloud"
+    - "owncloud"
+    - "phpfpm"
+    - "postgis"
+    - "debian"
+    - "ubuntu"
 
 dependencies:
-  - name: NBZ4live.php-fpm
-    src: https://github.com/NBZ4live/ansible-php-fpm
-    version: 2.0.12
+  - name: "NBZ4live.php-fpm"
+    src: "https://github.com/NBZ4live/ansible-php-fpm"
+    version: "2.0.12"

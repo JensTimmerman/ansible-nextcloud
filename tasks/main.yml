@@ -6,11 +6,20 @@
   register: "nextcloud_php_d_dir"
   changed_when: false
 
+- name: "Check whether a modular PHP stream is enabled"
+  ansible.builtin.command:
+    cmd: "dnf -qy module list --enabled php"
+  register: "nextcloud_php_module"
+  changed_when: false
+  failed_when: false
+  when: "ansible_os_family == 'RedHat'"
+
 - name: "Choose the PHP package layout"
   ansible.builtin.set_fact:
     nextcloud_php_modular_effective: >-
       {{ nextcloud_php_modular if nextcloud_php_modular is not none
-         else (nextcloud_php_d_dir.stat.isdir | default(false)) }}
+         else ((nextcloud_php_d_dir.stat.isdir | default(false)) or
+               ('remi' in (nextcloud_php_module.stdout | default('')))) }}
 
 - name: "Select the PHP package list"
   ansible.builtin.set_fact:
@@ -43,11 +52,12 @@
     state: "present"
 
 - name: Make sure destination folder exists
-  file:
+  ansible.builtin.file:
     path: "{{ nextcloud_destination }}"
     state: directory
     owner: "{{ nextcloud_dir_user }}"
     group: "{{ nextcloud_dir_group }}"
+    mode: "0755"
 
 # Create the install directory before any consumer (e.g. a php-fpm role
 # whose pool sets chdir) references it. unarchive would create it later,
@@ -61,23 +71,24 @@
     mode: "0755"
 
 - name: Check installed Nextcloud version
-  command: grep "OC_VersionString" {{ nextcloud_destination }}/nextcloud/version.php
+  ansible.builtin.command: grep "OC_VersionString" {{ nextcloud_destination }}/nextcloud/version.php
   register: installed_version
   failed_when: false
   changed_when: false
 
 - name: Download nextcloud
-  unarchive:
+  ansible.builtin.unarchive:
     src: "https://download.nextcloud.com/server/releases/nextcloud-{{ nextcloud_version }}.tar.bz2"
     dest: "{{ nextcloud_destination }}"
-    remote_src: yes
+    remote_src: true
     owner: "{{ nextcloud_dir_user }}"
     group: "{{ nextcloud_dir_group }}"
+    mode: "0755"
   when: nextcloud_version not in installed_version.stdout
 
 
 - name: Setup nextcloud cron to run every 5 minutes
-  cron:
+  ansible.builtin.cron:
     name: "Nextcloud cron"
     minute: "*/5"
     user: "{{ nextcloud_dir_user }}"
@@ -110,30 +121,31 @@
     - nextcloud_php_ini_stat.stat.exists | default(false)
 
 - name: Setup automatic daily backups
-  include_tasks: backups.yml
+  ansible.builtin.include_tasks: backups.yml
   when: nextcloud_backup is defined
 
 - name: Check config file status
-  stat:
+  ansible.builtin.stat:
     path: "{{ nextcloud_destination }}/nextcloud/config/config.php"
   register: nextcloud_config_file
 
 - name: Create config file if it doesn't exist
-  template:
-    src: config.php.j2
+  ansible.builtin.template:
+    src: "config.php.j2"
     dest: "{{ nextcloud_destination }}/nextcloud/config/config.php"
+    mode: "0640"
   when:
     - nextcloud_config is defined
     - not nextcloud_config_file.stat.exists
 
 - name: Configure Nextcloud installation
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: "{{ nextcloud_destination }}/nextcloud/config/config.php"
     regexp: "^  '{{ item.key }}' => .*,$"
     line: "  '{{ item.key }}' => {{ item.value }},"
     insertbefore: '^\);$'
-  loop: "{{ nextcloud_config|default({})|dict2items }}"
+  loop: "{{ nextcloud_config | default({}) | dict2items }}"
   no_log: true
 
 - name: OnlyOffice hack
-  include_tasks: onlyoffice-hack.yml
+  ansible.builtin.include_tasks: onlyoffice-hack.yml

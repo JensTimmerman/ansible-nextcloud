@@ -1,17 +1,18 @@
 ---
 # Hack taken from https://help.nextcloud.com/t/onlyoffice-data-loss/20586/5
 - name: Install systemd onlyoffice hack service
-  template:
+  ansible.builtin.template:
     src: onlyoffice.service.j2
-    dest: /etc/systemd/system/onlyoffice.service
-    owner: root
-    group: root
+    dest: "/etc/systemd/system/onlyoffice.service"
+    owner: "root"
+    group: "root"
+    mode: "0644"
   when: nextcloud_onlyoffice_force_flush_period is defined
   notify: "Enable and start service"
 
 - name: Remove systemd onlyoffice hack service when not needed
-  file:
+  ansible.builtin.file:
     state: absent
     dest: /etc/systemd/system/onlyoffice.service
   when: nextcloud_onlyoffice_force_flush_period is not defined
-  notify: force systemd to reread config
+  notify: "Force systemd to reread config"
