@@ -1,0 +1,15 @@
+---
+- name: "Converge (Ubuntu 24.04, distro PHP)"
+  hosts: "all"
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  become: false
+  roles:
+    - role: "nextcloud"
+  vars:
+    nextcloud_version: "35.0.2"
+    nextcloud_destination: "/var/www"
+    nextcloud_dir_user: "www-data"
+    nextcloud_dir_group: "www-data"
+    php_fpm_version: "8.3"
+    nextcloud_config:
+      trusted_domains: "['localhost', '127.0.0.1']"

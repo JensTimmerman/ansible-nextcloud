@@ -1,0 +1,50 @@
+---
+- name: "Verify (Ubuntu 24.04, distro PHP)"
+  hosts: "all"
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  become: false
+  tasks:
+    - name: "Stat the Nextcloud version file"
+      ansible.builtin.stat:
+        path: "/var/www/nextcloud/version.php"
+      register: "version_file"
+    - name: "Assert the release was extracted"
+      ansible.builtin.assert:
+        that:
+          - "version_file.stat.exists"
+    - name: "Read the installed version"
+      ansible.builtin.command:
+        cmd: "grep OC_VersionString /var/www/nextcloud/version.php"
+      register: "version_grep"
+      changed_when: false
+    - name: "Assert the target version"
+      ansible.builtin.assert:
+        that:
+          - "'35.0.2' in version_grep.stdout"
+    - name: "Stat the generated config.php"
+      ansible.builtin.stat:
+        path: "/var/www/nextcloud/config/config.php"
+      register: "config_file"
+    - name: "Assert config.php exists"
+      ansible.builtin.assert:
+        that:
+          - "config_file.stat.exists"
+    - name: "Read the memory limit in php.ini"
+      ansible.builtin.command:
+        cmd: "grep ^memory_limit /etc/php/8.3/fpm/php.ini"
+      register: "memory_line"
+      changed_when: false
+    - name: "Assert the memory limit is configured"
+      ansible.builtin.assert:
+        that:
+          - "'512M' in memory_line.stdout"
+    - name: "Read the www-data crontab"
+      ansible.builtin.command:
+        cmd: "crontab -l -u www-data"
+      register: "www_cron"
+      changed_when: false
+      failed_when: false
+    - name: "Assert the Nextcloud cron entry exists"
+      ansible.builtin.assert:
+        that:
+          - "'nextcloud/cron.php' in www_cron.stdout"

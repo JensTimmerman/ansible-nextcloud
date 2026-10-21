@@ -1,17 +1,17 @@
 ---
-- name: force systemd to reread config
-  systemd:
-    daemon_reload: yes
+- name: "Force systemd to reread config"
+  ansible.builtin.systemd:
+    daemon_reload: true
   listen: "Enable and start service"
 
 - name: Enable OO hack service
-  systemd:
+  ansible.builtin.systemd:
     name: onlyoffice
-    enabled: yes
+    enabled: true
   listen: "Enable and start service"
 
 - name: Start OO hack service
-  systemd:
+  ansible.builtin.systemd:
     name: onlyoffice
     state: started
   listen: "Enable and start service"

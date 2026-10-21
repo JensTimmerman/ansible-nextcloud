@@ -1,3 +1,22 @@
+> **Maintained fork.** This is the maintained fork of
+> [swcc/ansible-nextcloud](https://github.com/swcc/ansible-nextcloud), which is
+> unmaintained (last commit 2020). This fork adds Remi modular PHP support,
+> fresh-install support, release-manifest pruning and CI (Molecule on Rocky 9
+> and Ubuntu 24.04).
+
+
+## php-fpm dependency
+
+This role installs the PHP packages it needs, including `php-fpm` (the
+`phpX.Y-fpm` package on Debian/Ubuntu and `php-fpm` on the Remi modular
+stream). It does **not** configure php-fpm pools.
+
+The previous hard dependency on `NBZ4live/ansible-php-fpm` was removed: that
+role is unmaintained (last commit 2020) and its `include:` tasks with extra
+params are rejected by ansible-core >= 2.14. If you want the pool/config
+handling, add that role to your play explicitly (or use your own php-fpm
+configuration).
+
 Nextcloud Ansible role
 =========
 

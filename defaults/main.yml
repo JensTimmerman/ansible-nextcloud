@@ -42,14 +42,11 @@ nextcloud_php_packages_modular:
   - "php-pecl-imagick-im7"
 
 nextcloud_php_packages_legacy:
+  - "php{{ php_fpm_version }}-fpm"
   - "php{{ php_fpm_version }}-curl"
-  - "php{{ php_fpm_version }}-dom"
-  - "php{{ php_fpm_version }}-fileinfo"
   - "php{{ php_fpm_version }}-gd"
-  - "php{{ php_fpm_version }}-iconv"
   - "php{{ php_fpm_version }}-imagick"
   - "php{{ php_fpm_version }}-intl"
-  - "php{{ php_fpm_version }}-json"
   - "php{{ php_fpm_version }}-gmp"
   - "php{{ php_fpm_version }}-bcmath"
   - "php{{ php_fpm_version }}-mbstring"

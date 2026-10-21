@@ -1,22 +1,29 @@
 ---
-- name: Add .pgpass for backup script
-  lineinfile:
-    path: /root/.pgpass
-    mode: '600'
+- name: "Compose the .pgpass connection fields"
+  ansible.builtin.set_fact:
+    nextcloud_pgpass_host: "{{ nextcloud_backup.pg.host | default('localhost') }}"
+    nextcloud_pgpass_port: "{{ nextcloud_backup.pg.port | default(5432) }}"
+    nextcloud_pgpass_db: "{{ nextcloud_backup.pg.dbname | default('nextcloud') }}"
+    nextcloud_pgpass_user: "{{ nextcloud_backup.pg.username | default('nextcloud') }}"
+
+- name: "Add .pgpass for the backup script"
+  ansible.builtin.lineinfile:
+    path: "/root/.pgpass"
+    mode: "0600"
     create: true
-    regex: "^{{ nextcloud_backup.pg.host|default('localhost') }}:{{ nextcloud_backup.pg.port|default(5432) }}:{{ nextcloud_backup.pg.dbname|default('nextcloud') }}:{{ nextcloud_backup.pg.username|default('nextcloud') }}"
-    line: "{{ nextcloud_backup.pg.host|default('localhost') }}:{{ nextcloud_backup.pg.port|default(5432) }}:{{ nextcloud_backup.pg.dbname|default('nextcloud') }}:{{ nextcloud_backup.pg.username|default('nextcloud') }}:{{ nextcloud_backup.pg.password }}"
+    regex: "^{{ nextcloud_pgpass_host }}:{{ nextcloud_pgpass_port }}:{{ nextcloud_pgpass_db }}:{{ nextcloud_pgpass_user }}"
+    line: "{{ nextcloud_pgpass_host }}:{{ nextcloud_pgpass_port }}:{{ nextcloud_pgpass_db }}:{{ nextcloud_pgpass_user }}:{{ nextcloud_backup.pg.password }}"
   no_log: true
 
-- name: Add a backup script to backup Data dir + Postgresql database
-  template:
-    src: backup-nextcloud.sh.j2
-    dest: /root/backup-nextcloud.sh
-    mode: '700'
+- name: "Add a backup script to back up the data dir and the PostgreSQL database"
+  ansible.builtin.template:
+    src: "backup-nextcloud.sh.j2"
+    dest: "/root/backup-nextcloud.sh"
+    mode: "0700"
 
-- name: Setup root cron to run backups every day at 3a.m
-  cron:
+- name: "Set up the root cron to run backups daily at 03:00"
+  ansible.builtin.cron:
     name: "Nextcloud backup cron"
     minute: "0"
     hour: "3"
-    job: "/root/backup-nextcloud.sh >> /var/log/backup-nexcloud.log"
+    job: "/root/backup-nextcloud.sh >> /var/log/backup-nextcloud.log"

@@ -1,29 +1,27 @@
+---
 galaxy_info:
-  author: Paul Bonaud
-  company: swcc
+  # Explicit Galaxy identity: the repository directory is `ansible-nextcloud`
+  # (hyphen), which ansible-compat/molecule cannot turn into a valid role name.
+  namespace: "jens"
+  role_name: "nextcloud"
+  author: "Paul Bonaud"
+  company: "swcc"
   description: "Install and configure Nextcloud"
-  min_ansible_version: 2.4.0
-  license: GPL
-
+  min_ansible_version: "2.4.0"
+  license: "GPL"
   platforms:
-  - name: Debian
-    versions:
-    - stretch
-    - buster
-  - name: Ubuntu
-    versions:
-    - xenial
-    - bionic
-
+    - name: "Debian"
+      versions:
+        - "stretch"
+        - "buster"
+    - name: "Ubuntu"
+      versions:
+        - "xenial"
+        - "bionic"
   galaxy_tags:
-  - nextcloud
-  - owncloud
-  - php-fpm
-  - postgis
-  - debian
-  - ubuntu
-
-dependencies:
-  - name: NBZ4live.php-fpm
-    src: https://github.com/NBZ4live/ansible-php-fpm
-    version: 2.0.12
+    - "nextcloud"
+    - "owncloud"
+    - "phpfpm"
+    - "postgis"
+    - "debian"
+    - "ubuntu"
