@@ -155,6 +155,71 @@
     - nextcloud_is_upgrade | bool
 
 
+# Fresh install. Read the real state from occ (config.php may exist but be
+# empty, so its presence is not a reliable signal). --output=json keeps
+# stdout pure even when occ warns on stderr.
+- name: "Read the Nextcloud installation state"
+  ansible.builtin.command:
+    cmd: "php occ status --output=json"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  register: "nextcloud_status"
+  changed_when: false
+  failed_when: false
+
+- name: "Determine whether Nextcloud is installed"
+  ansible.builtin.set_fact:
+    nextcloud_is_installed: >-
+      {{ ((nextcloud_status.stdout | default('') | from_json).installed
+          | default(false) | bool)
+         if (nextcloud_status.stdout | default('') | trim) is match('^\{')
+         else false }}
+
+- name: "Warn when Nextcloud is not installed and automatic install is disabled"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Nextcloud reports installed=false and
+      nextcloud_maintenance_install is false. Complete the web installer, or
+      set nextcloud_maintenance_install: true with nextcloud_admin_password
+      and the nextcloud_db_* variables to install from this role.
+  when: not nextcloud_is_installed and not nextcloud_maintenance_install | bool
+
+- name: "Validate the fresh-install inputs"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_admin_password | length > 0"
+      - "nextcloud_db_password | length > 0 or nextcloud_db_type == 'sqlite'"
+    fail_msg: >-
+      nextcloud_maintenance_install is true but the admin password is empty
+      and/or the database password is empty (allowed only for sqlite).
+    quiet: true
+  when:
+    - nextcloud_maintenance_install | bool
+    - not nextcloud_is_installed
+
+- name: "Install Nextcloud (fresh instance)"
+  ansible.builtin.command:
+    argv: >-
+      {{ ['php', 'occ', 'maintenance:install',
+          '--database=' ~ nextcloud_db_type,
+          '--database-name=' ~ nextcloud_db_name,
+          '--database-user=' ~ nextcloud_db_user,
+          '--database-pass=' ~ nextcloud_db_password,
+          '--admin-user=' ~ nextcloud_admin_user,
+          '--admin-pass=' ~ nextcloud_admin_password,
+          '--data-dir=' ~ nextcloud_data_dir]
+         + (['--database-host=' ~ nextcloud_db_host]
+            if nextcloud_db_type != 'sqlite' else []) }}
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  no_log: true
+  changed_when: true
+  when:
+    - nextcloud_maintenance_install | bool
+    - not nextcloud_is_installed
+
 - name: Setup nextcloud cron to run every 5 minutes
   ansible.builtin.cron:
     name: "Nextcloud cron"
