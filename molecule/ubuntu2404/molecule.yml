@@ -1,7 +1,7 @@
 ---
 dependency:
   name: "shell"
-  command: "ansible-galaxy install -r requirements.yml"
+  command: "true"
 driver:
   name: "docker"
 platforms:

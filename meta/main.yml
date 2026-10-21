@@ -25,8 +25,3 @@ galaxy_info:
     - "postgis"
     - "debian"
     - "ubuntu"
-
-dependencies:
-  - name: "NBZ4live.php-fpm"
-    src: "https://github.com/NBZ4live/ansible-php-fpm"
-    version: "2.0.12"

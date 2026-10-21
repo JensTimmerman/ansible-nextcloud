@@ -42,6 +42,7 @@ nextcloud_php_packages_modular:
   - "php-pecl-imagick-im7"
 
 nextcloud_php_packages_legacy:
+  - "php{{ php_fpm_version }}-fpm"
   - "php{{ php_fpm_version }}-curl"
   - "php{{ php_fpm_version }}-dom"
   - "php{{ php_fpm_version }}-fileinfo"
