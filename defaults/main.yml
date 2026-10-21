@@ -55,6 +55,11 @@ nextcloud_php_packages_legacy:
   - "php{{ php_fpm_version }}-xml"
   - "php{{ php_fpm_version }}-zip"
 
+# Minimum acceptable PHP version. Empty disables the check. Set this to the
+# security floor (e.g. "8.4.27") so the role fails instead of downgrading
+# when the repositories lag the installed version.
+nextcloud_php_min_version: ""
+
 # Remove files that the target release no longer ships before extracting it
 # over the existing tree. Opt-in: it deletes files. Only release-owned
 # directories are touched (core dirs + shipped apps); config, data, themes,

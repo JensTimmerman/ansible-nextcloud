@@ -36,10 +36,45 @@
          else ('/etc/php.ini' if nextcloud_php_modular_effective | bool
                else '/etc/php/' ~ php_fpm_version ~ '/fpm/php.ini') }}
 
-- name: "Install the PHP packages required by Nextcloud"
-  ansible.builtin.package:
+- name: "Install the PHP packages required by Nextcloud (RedHat)"  # noqa: package-latest
+  ansible.builtin.dnf:
     name: "{{ nextcloud_php_packages_effective }}"
+    state: "latest"
     update_cache: true
+    # Never downgrade: when the repo/module metadata lags the installed
+    # version (e.g. a security patch published on the primary before the
+    # mirrors), dnf would otherwise align to the older module stream and
+    # downgrade PHP. Fail/skip instead.
+    allow_downgrade: false
+  when: ansible_os_family == "RedHat"
+
+- name: "Install the PHP packages required by Nextcloud (Debian)"
+  ansible.builtin.apt:
+    name: "{{ nextcloud_php_packages_effective }}"
+    state: "present"
+    update_cache: true
+  when: ansible_os_family != "RedHat"
+
+# Optional floor: fail loudly when the configured repositories do not offer
+# the required (security) version instead of silently downgrading.
+- name: "Read the installed PHP version"
+  ansible.builtin.command:
+    cmd: "php -r 'echo PHP_VERSION;'"
+  register: "nextcloud_php_installed_version"
+  changed_when: false
+  when: "nextcloud_php_min_version | default('') | length > 0"
+
+- name: "Assert the installed PHP meets nextcloud_php_min_version"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_php_installed_version.stdout is version(nextcloud_php_min_version, '>=')"
+    fail_msg: >-
+      PHP {{ nextcloud_php_installed_version.stdout }} is older than
+      nextcloud_php_min_version ({{ nextcloud_php_min_version }}). The
+      configured repositories do not offer the newer package; the role will
+      not downgrade. Wait for the repo/mirror to publish it and rerun.
+    success_msg: "PHP {{ nextcloud_php_installed_version.stdout }} >= {{ nextcloud_php_min_version }}."
+  when: "nextcloud_php_min_version | default('') | length > 0"
 
 # unarchive (remote_src) needs tar plus bzip2 for the .tar.bz2 release.
 # Minimal EL9 containers ship neither, and the task fails with
