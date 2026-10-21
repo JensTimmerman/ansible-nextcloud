@@ -24,6 +24,22 @@
       retries: 5
       delay: 20
       until: "remi_release_install is succeeded"
+    # dnf's mirrorlist for Remi has produced 404s and stalled RPM downloads
+    # on CI runners. Pin the repos to the canonical host that serves the
+    # release RPM (also reachable from the runner).
+    - name: "Point the Remi repositories at the canonical server"
+      ansible.builtin.command:
+        cmd: >-
+          dnf -y config-manager --save
+          --setopt=remi.baseurl=https://rpms.remirepo.net/enterprise/9/remi/x86_64/
+          --setopt=remi-modular.baseurl=https://rpms.remirepo.net/enterprise/9/modular/x86_64/
+          --setopt=remi-safe.baseurl=https://rpms.remirepo.net/enterprise/9/safe/x86_64/
+      register: "remi_baseurl"
+      changed_when: false
+      retries: 3
+      delay: 10
+      until: "remi_baseurl.rc == 0"
+
     - name: "Reset the php module"
       ansible.builtin.command:
         cmd: "dnf -y --setopt=retries=5 --setopt=timeout=30 module reset php"
