@@ -9,14 +9,36 @@
         name: "https://rpms.remirepo.net/enterprise/remi-release-9.rpm"
         state: "present"
         disable_gpg_check: true
+    # The Remi release enables remi-safe/test/debuginfo, whose mirrors are
+    # flaky (404s and an expired certificate on some mirrors). Only the
+    # modular stream is needed here.
+    - name: "Disable unneeded Remi repositories"
+      ansible.builtin.command:
+        cmd: "dnf -y config-manager --set-disabled remi-safe remi-test remi-debuginfo"
+      register: "remi_disable"
+      changed_when: false
+      failed_when: false
+      retries: 3
+      delay: 10
+      until: "remi_disable.rc == 0"
+
     - name: "Reset the php module"
       ansible.builtin.command:
-        cmd: "dnf module reset php -y"
+        cmd: "dnf -y --setopt=retries=5 --setopt=timeout=30 module reset php"
+      register: "php_module_reset"
       changed_when: false
+      retries: 4
+      delay: 15
+      until: "php_module_reset.rc == 0"
+
     - name: "Enable php:remi-8.4"
       ansible.builtin.command:
-        cmd: "dnf module enable php:remi-8.4 -y"
+        cmd: "dnf -y --setopt=retries=5 --setopt=timeout=30 module enable php:remi-8.4"
+      register: "php_module_enable"
       changed_when: false
+      retries: 4
+      delay: 15
+      until: "php_module_enable.rc == 0"
     - name: "Install base tools"
       ansible.builtin.dnf:
         name:
