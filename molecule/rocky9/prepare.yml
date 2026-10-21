@@ -4,11 +4,26 @@
   # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
   become: false
   tasks:
+    # remirepo mirrors are occasionally slow or drop TLS handshakes on CI
+    # runners. Make dnf itself retry, for every later dnf call too.
+    - name: "Set dnf retries and timeouts"
+      ansible.builtin.lineinfile:
+        path: "/etc/dnf/dnf.conf"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - {key: "retries", value: "10"}
+        - {key: "timeout", value: "60"}
+
     - name: "Install the Remi release package"
       ansible.builtin.dnf:
         name: "https://rpms.remirepo.net/enterprise/remi-release-9.rpm"
         state: "present"
         disable_gpg_check: true
+      register: "remi_release_install"
+      retries: 5
+      delay: 20
+      until: "remi_release_install is succeeded"
     # The Remi release enables remi-safe/test/debuginfo, whose mirrors are
     # flaky (404s and an expired certificate on some mirrors). Only the
     # modular stream is needed here.
@@ -47,3 +62,7 @@
           - "sudo"
           - "cronie"
         state: "present"
+      register: "base_tools_install"
+      retries: 5
+      delay: 20
+      until: "base_tools_install is succeeded"
