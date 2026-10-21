@@ -24,19 +24,6 @@
       retries: 5
       delay: 20
       until: "remi_release_install is succeeded"
-    # The Remi release enables remi-safe/test/debuginfo, whose mirrors are
-    # flaky (404s and an expired certificate on some mirrors). Only the
-    # modular stream is needed here.
-    - name: "Disable unneeded Remi repositories"
-      ansible.builtin.command:
-        cmd: "dnf -y config-manager --set-disabled remi-safe remi-test remi-debuginfo"
-      register: "remi_disable"
-      changed_when: false
-      failed_when: false
-      retries: 3
-      delay: 10
-      until: "remi_disable.rc == 0"
-
     - name: "Reset the php module"
       ansible.builtin.command:
         cmd: "dnf -y --setopt=retries=5 --setopt=timeout=30 module reset php"
