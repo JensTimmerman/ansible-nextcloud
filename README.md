@@ -97,6 +97,37 @@ php_fpm_pools:
       HOSTNAME: "$HOSTNAME"
 ```
 
+config.php repair
+-----------------
+
+Nextcloud refuses a config file that has any bytes before the `<?php` open
+tag; every `occ` call then fails with:
+
+```
+Exception: Config file has leading content, please remove everything before "<?php" in config.php
+```
+
+On every run, **before the first `occ` call**, the role checks
+`{{ nextcloud_destination }}/nextcloud/config/config.php`. When the `<?php`
+tag is not at offset 0, it rewrites the file from that tag onwards, so the
+stray leading bytes (for example legacy `nextcloud_config` values inserted
+above `<?php`) are dropped. The rewrite:
+
+- keeps ownership and permissions (`{{ nextcloud_dir_user }}:{{ nextcloud_dir_group }}`, mode `0640`),
+- leaves a timestamped `config.php.*~` backup next to the file (Nextcloud ignores it),
+- is idempotent (a valid file has offset 0 and is never rewritten),
+- never executes the leading bytes: they are discarded, not interpreted,
+- is fully `no_log` (config.php contains the database password and instance secret).
+
+A non-empty file with no `<?php` tag at all cannot be repaired safely and
+makes the role fail with an explicit message; restore it from a backup. A
+zero-byte `config.php` is left untouched, since that is the normal "not
+installed yet" state detected via `occ status`.
+
+`templates/config.php.j2` now starts with `<?php` too (the `ansible_managed`
+comment moved inside the PHP document), so a config file created by this role
+is valid for Nextcloud.
+
 Makefile for easier Ansible usage
 ------------------
 

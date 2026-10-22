@@ -16,3 +16,28 @@
           - "gnupg"
           - "software-properties-common"
         state: "present"
+
+    # Regression: seed a config.php whose legacy nextcloud_config values sit
+    # BEFORE `<?php`, exactly like the QA host that failed `occ upgrade` with
+    # "Config file has leading content". The role must repair it before its
+    # first occ call and leave a config.php.*~ backup behind (asserted in
+    # verify.yml), otherwise the fresh install fails.
+    - name: "Create the config directory for the repair regression"
+      ansible.builtin.file:
+        path: "/var/www/nextcloud/config"
+        state: "directory"
+        mode: "0755"
+
+    - name: "Seed config.php with leading content (regression)"
+      ansible.builtin.copy:
+        dest: "/var/www/nextcloud/config/config.php"
+        content: |
+          'trusted_domains' => array('old.example.org'),
+          'trusted_proxies' => array('10.0.0.9'),
+          'forwarded_for_headers' => array('HTTP_X_FORWARDED_FOR'),
+          <?php
+          $CONFIG = array (
+          );
+        owner: "root"
+        group: "root"
+        mode: "0640"

@@ -31,6 +31,26 @@
       ansible.builtin.assert:
         that:
           - "config_file.stat.exists"
+    - name: "Read the generated config.php"
+      ansible.builtin.slurp:
+        src: "/var/www/nextcloud/config/config.php"
+      register: "config_content"
+      no_log: true
+    - name: "Assert config.php starts with the PHP open tag"
+      ansible.builtin.assert:
+        that:
+          - "(config_content.content | b64decode).startswith('<?php')"
+    - name: "Find the backup created by the leading-content repair"
+      ansible.builtin.find:
+        paths: "/var/www/nextcloud/config"
+        patterns: "config.php.*~"
+      register: "config_repair_backups"
+    # Proves the repair ran on the corrupt file seeded by prepare.yml (and was
+    # not merely overwritten by the fresh install).
+    - name: "Assert the leading-content repair backed up the corrupt config.php"
+      ansible.builtin.assert:
+        that:
+          - "config_repair_backups.matched | int > 0"
     - name: "Read the memory limit in php.ini"
       ansible.builtin.command:
         cmd: "grep ^memory_limit /etc/php/8.3/fpm/php.ini"
