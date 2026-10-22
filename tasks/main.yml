@@ -190,6 +190,70 @@
     - nextcloud_is_upgrade | bool
 
 
+# Repair a config.php that has bytes before `<?php`. Nextcloud's
+# OC\Config::readData() rejects any leading content, so every occ command -
+# including the `occ status` below - fails on such a file. Two role bugs could
+# produce one: config.php.j2 emitted its ansible_managed comment before
+# `<?php`, and the legacy nextcloud_config lineinfile can insert values at the
+# top of an empty/invalid file. Strip everything before the first `<?php`
+# BEFORE occ is used; otherwise nextcloud_is_installed is wrongly false and a
+# fresh install is attempted over a corrupt file. config.php holds the DB
+# password and instance secret, so every task reading or rewriting it is
+# no_log.
+- name: "Stat config.php before reading the installation state"
+  ansible.builtin.stat:
+    path: "{{ nextcloud_destination }}/nextcloud/config/config.php"
+  register: "nextcloud_config_repair_stat"
+  no_log: true
+
+- name: "Read config.php for the leading-content repair"
+  ansible.builtin.slurp:
+    src: "{{ nextcloud_destination }}/nextcloud/config/config.php"
+  register: "nextcloud_config_repair_slurp"
+  no_log: true
+  when: nextcloud_config_repair_stat.stat.exists | default(false)
+
+- name: "Locate the PHP open tag in config.php"
+  ansible.builtin.set_fact:
+    nextcloud_config_php_offset: >-
+      {{ (nextcloud_config_repair_slurp.content | b64decode).find('<?php')
+         if (nextcloud_config_repair_stat.stat.exists | default(false))
+         else -1 }}
+  no_log: true
+
+# A non-empty file without any `<?php` cannot be repaired by stripping bytes:
+# there is no PHP document to keep, so fail loudly instead of guessing. A
+# zero-byte file is the known "not installed yet" state - `occ status` is the
+# source of truth there - so it is left untouched.
+- name: "Fail when config.php has no PHP open tag and cannot be repaired"
+  ansible.builtin.fail:
+    msg: >-
+      {{ nextcloud_destination }}/nextcloud/config/config.php exists but has
+      no "<?php" open tag, so it cannot be repaired automatically. Restore it
+      from a backup (or remove it for a fresh install) and rerun the role.
+  when:
+    - nextcloud_config_repair_stat.stat.exists | default(false)
+    - nextcloud_config_php_offset | int < 0
+    - (nextcloud_config_repair_slurp.content | b64decode) | length > 0
+
+# Only strip; the leading bytes are discarded, never executed. backup: true
+# keeps a timestamped config.php.*~ copy next to the file (Nextcloud ignores
+# it). Idempotent: a file that already starts with `<?php` has offset 0 and
+# is not rewritten.
+- name: "Repair config.php by stripping content before the PHP open tag"
+  ansible.builtin.copy:
+    content: >-
+      {{ (nextcloud_config_repair_slurp.content | b64decode)[nextcloud_config_php_offset | int :] }}
+    dest: "{{ nextcloud_destination }}/nextcloud/config/config.php"
+    owner: "{{ nextcloud_dir_user }}"
+    group: "{{ nextcloud_dir_group }}"
+    mode: "0640"
+    backup: true
+  no_log: true
+  when:
+    - nextcloud_config_repair_stat.stat.exists | default(false)
+    - nextcloud_config_php_offset | int > 0
+
 # Fresh install. Read the real state from occ (config.php may exist but be
 # empty, so its presence is not a reliable signal). --output=json keeps
 # stdout pure even when occ warns on stderr.
@@ -296,15 +360,36 @@
   ansible.builtin.stat:
     path: "{{ nextcloud_destination }}/nextcloud/config/config.php"
   register: nextcloud_config_file
+  no_log: true
 
 - name: Create config file if it doesn't exist
   ansible.builtin.template:
     src: "config.php.j2"
     dest: "{{ nextcloud_destination }}/nextcloud/config/config.php"
     mode: "0640"
+  no_log: true
   when:
     - nextcloud_config is defined
     - not nextcloud_config_file.stat.exists
+
+# The legacy lineinfile inserts before the closing `);` line, so it must only
+# run on a file that actually has one. The earlier repair already guarantees
+# `<?php` is on line 1 or the run failed; this additionally skips a config
+# that is absent or has no closing line, so the task can never append values
+# after a broken array (or to the top of an empty file). This runs *after* the
+# template above, so a config.php just created by it is still edited as before.
+- name: "Check config.php has a closing config line before editing it"
+  ansible.builtin.command:
+    argv:
+      - "grep"
+      - "-qxF"
+      - ");"
+      - "{{ nextcloud_destination }}/nextcloud/config/config.php"
+  register: "nextcloud_config_closing_line"
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: nextcloud_config is defined
 
 - name: Configure Nextcloud installation
   ansible.builtin.lineinfile:
@@ -314,6 +399,7 @@
     insertbefore: '^\);$'
   loop: "{{ nextcloud_config | default({}) | dict2items }}"
   no_log: true
+  when: nextcloud_config_closing_line.rc | default(1) | int == 0
 
 # Typed trusted-domain/proxy lists applied via occ, AFTER the legacy
 # nextcloud_config loop so the occ values win. Guarded so a run with all three
