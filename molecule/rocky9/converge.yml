@@ -1,15 +1,39 @@
 ---
 - name: "Converge (Rocky 9, modular PHP)"
   hosts: "all"
-  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
+  # Molecule docker connects as root; sudo as root fails PAM on Rocky 9, so
+  # escalate with su instead.
   become: false
+  pre_tasks:
+    # The scenario installs a real (SQLite-backed) Nextcloud so that the
+    # config:system:* occ commands are available; that needs the PDO driver.
+    - name: "Install the SQLite PDO driver"
+      ansible.builtin.dnf:
+        name: "php-sqlite3"
+        state: "present"
   roles:
     - role: "nextcloud"
   vars:
+    ansible_become_method: "su"
     nextcloud_version: "35.0.2"
     nextcloud_destination: "/var/www"
     nextcloud_dir_user: "root"
     nextcloud_dir_group: "root"
     php_fpm_version: "84-php"
+    nextcloud_maintenance_install: true
+    nextcloud_db_type: "sqlite"
+    nextcloud_admin_password: "MoleculeAdminPass123"
+    # Array-valued keys must not go through the legacy raw-PHP `nextcloud_config`
+    # loop: `occ` rewrites config.php as a multi-line `array (...)`, which the
+    # loop's single-line regexp cannot match, so it would re-insert the key on
+    # every run. trusted_domains is covered by the typed vars below; a scalar
+    # key keeps the legacy path exercised (and stays idempotent).
     nextcloud_config:
-      trusted_domains: "['localhost', '127.0.0.1']"
+      log_type: "'file'"
+    nextcloud_trusted_domains:
+      - "localhost"
+      - "127.0.0.1"
+    nextcloud_trusted_proxies:
+      - "10.0.0.1"
+    nextcloud_forwarded_for_headers:
+      - "HTTP_X_FORWARDED_FOR"

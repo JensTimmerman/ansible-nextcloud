@@ -3,6 +3,10 @@
   hosts: "all"
   # Molecule docker connects as root; sudo as root fails PAM on Rocky 9.
   become: false
+  vars:
+    # sudo as root fails PAM on Rocky 9; escalate with su instead.
+    ansible_become_method: "su"
+    nextcloud_dir_user: "root"
   tasks:
     - name: "Stat the Nextcloud version file"
       ansible.builtin.stat:
@@ -47,3 +51,42 @@
       ansible.builtin.assert:
         that:
           - "'nextcloud/cron.php' in root_cron.stdout"
+    - name: "Read the configured trusted domains via occ"
+      ansible.builtin.command:
+        argv: ["php", "occ", "config:system:get", "trusted_domains", "--output=json"]
+        chdir: "/var/www/nextcloud"
+      become: true
+      become_user: "{{ nextcloud_dir_user }}"
+      register: "occ_trusted_domains"
+      changed_when: false
+    - name: "Assert the trusted domains were applied"
+      ansible.builtin.assert:
+        that:
+          - "(occ_trusted_domains.stdout | from_json) == ['localhost', '127.0.0.1']"
+        quiet: true
+    - name: "Read the configured trusted proxies via occ"
+      ansible.builtin.command:
+        argv: ["php", "occ", "config:system:get", "trusted_proxies", "--output=json"]
+        chdir: "/var/www/nextcloud"
+      become: true
+      become_user: "{{ nextcloud_dir_user }}"
+      register: "occ_trusted_proxies"
+      changed_when: false
+    - name: "Assert the trusted proxies were applied"
+      ansible.builtin.assert:
+        that:
+          - "(occ_trusted_proxies.stdout | from_json) == ['10.0.0.1']"
+        quiet: true
+    - name: "Read the configured forwarded-for headers via occ"
+      ansible.builtin.command:
+        argv: ["php", "occ", "config:system:get", "forwarded_for_headers", "--output=json"]
+        chdir: "/var/www/nextcloud"
+      become: true
+      become_user: "{{ nextcloud_dir_user }}"
+      register: "occ_forwarded_for_headers"
+      changed_when: false
+    - name: "Assert the forwarded-for headers were applied"
+      ansible.builtin.assert:
+        that:
+          - "(occ_forwarded_for_headers.stdout | from_json) == ['HTTP_X_FORWARDED_FOR']"
+        quiet: true
