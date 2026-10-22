@@ -53,6 +53,21 @@
       ansible.builtin.assert:
         that:
           - "config_repair_backups.matched | int > 0"
+    # Independent of the startswith() check above: let Nextcloud parse its own
+    # config.php, which dies on any byte before `<?php`.
+    - name: "Read the instance status via occ"
+      ansible.builtin.command:
+        argv: ["php", "occ", "status", "--output=json"]
+        chdir: "/var/www/nextcloud"
+      become: true
+      become_user: "{{ nextcloud_dir_user }}"
+      register: "occ_status"
+      changed_when: false
+    - name: "Assert config.php is readable by Nextcloud itself"
+      ansible.builtin.assert:
+        that:
+          - "(occ_status.stdout | from_json).installed | bool"
+        quiet: true
     - name: "Read the modular php memory drop-in"
       ansible.builtin.slurp:
         src: "/etc/php.d/10-nextcloud-memory.ini"
