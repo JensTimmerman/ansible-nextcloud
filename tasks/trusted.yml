@@ -1,0 +1,130 @@
+---
+# Typed list variables applied through `occ`.
+#
+# These run AFTER the legacy `nextcloud_config` lineinfile loop in main.yml,
+# so when both set the same key the occ-applied values win. `occ` writes
+# multi-line PHP arrays (e.g. "array (0 => 'a',)"), which the single-line
+# regexp used by that loop cannot match - hence occ here.
+#
+# Semantics:
+#   * empty list           -> the key is skipped entirely (no-op);
+#   * index 0..M-1         -> set to the desired value (changed only on diff);
+#   * surplus indices M..N-1 (when the list shrinks) -> deleted highest-first.
+#
+# All occ calls run as `nextcloud_dir_user` (occ refuses when the caller does
+# not own config.php) with the Nextcloud webroot as the working directory.
+
+- name: "Build the map of non-empty trusted-config lists"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_config: >-
+      {{ {'trusted_domains': nextcloud_trusted_domains,
+          'trusted_proxies': nextcloud_trusted_proxies,
+          'forwarded_for_headers': nextcloud_forwarded_for_headers}
+         | dict2items
+         | selectattr('value')
+         | list }}
+  changed_when: false
+
+# `--output=json` keeps the value parseable even though a config.php written by
+# the role's template carries a leading comment line (PHP echoes anything
+# before "<?php"), which would otherwise pollute plain output.
+- name: "Read the current trusted-config lists"
+  ansible.builtin.command:
+    argv: "{{ ['php', 'occ', 'config:system:get', item.key, '--output=json'] }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  register: "nextcloud_trusted_read"
+  changed_when: false
+  # occ exits non-zero when the key is not set yet; treat that as an empty list
+  # rather than a failure.
+  failed_when: false
+  loop: "{{ nextcloud_trusted_config }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: "Initialise the current-value map"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_current: {}
+  changed_when: false
+
+- name: "Record the current value of each trusted-config key"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_current: >-
+      {{ nextcloud_trusted_current
+         | combine({item.item.key: (item.stdout | default('')
+                                    | regex_search('\[.*\]')
+                                    | default('[]', true)
+                                    | from_json)
+                    if item.rc | default(0) == 0 else []}) }}
+  changed_when: false
+  loop: "{{ nextcloud_trusted_read.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: "Initialise the flattened set list"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_sets: []
+  changed_when: false
+
+# Flatten to (key, index, value) triples so a single loop can drive every
+# `config:system:set` call without nested loops.
+- name: "Flatten the desired trusted-config values with their index"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_sets: >-
+      {{ nextcloud_trusted_sets
+         + (([item.key] * (item.value | length))
+            | zip(range(0, item.value | length) | list, item.value)
+            | list) }}
+  changed_when: false
+  loop: "{{ nextcloud_trusted_config }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: "Set the desired trusted-config values"
+  ansible.builtin.command:
+    argv: "{{ ['php', 'occ', 'config:system:set',
+              item.0, item.1 | string, '--value=' ~ item.2] }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  loop: "{{ nextcloud_trusted_sets }}"
+  loop_control:
+    label: "{{ item.0 }}[{{ item.1 }}]"
+  # config:system:set always rewrites config.php; report changed only when the
+  # current value at that index actually differs.
+  changed_when: >-
+    (nextcloud_trusted_current[item.0][item.1] | default('')) != item.2
+
+- name: "Initialise the flattened delete list"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_deletes: []
+  changed_when: false
+
+# Surplus indices (current length N minus desired length M) are deleted
+# highest-first to avoid reindex drift.
+- name: "Flatten the surplus trusted-config indices (highest first)"
+  ansible.builtin.set_fact:
+    nextcloud_trusted_deletes: >-
+      {{ nextcloud_trusted_deletes
+         + (([item.key] * ((nextcloud_trusted_current[item.key] | default([]) | length)
+                           - (item.value | length)))
+            | zip(range((nextcloud_trusted_current[item.key] | default([]) | length) - 1,
+                       (item.value | length) - 1, -1) | list)
+            | list) }}
+  changed_when: false
+  loop: "{{ nextcloud_trusted_config }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: "Delete surplus trusted-config indices (highest first)"
+  ansible.builtin.command:
+    argv: "{{ ['php', 'occ', 'config:system:delete', item.0, item.1 | string] }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  loop: "{{ nextcloud_trusted_deletes }}"
+  loop_control:
+    label: "{{ item.0 }}[{{ item.1 }}]"
+  # Only indices known to exist are listed, so a delete always changes state.
+  changed_when: true

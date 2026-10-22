@@ -117,3 +117,11 @@ nextcloud_data_dir: "{{ nextcloud_destination }}/nextcloud/data"
 #   dbtableprefix: "'oc_'"
 #   dbuser: "'nextcloud'"
 #   dbpassword: "'{{ vault_postgresql_nextcloud_password }}'"
+
+# Typed list configuration applied through `occ` (config:system:set/delete)
+# as the Nextcloud owner, AFTER the legacy `nextcloud_config` loop above. An
+# empty list is a no-op. When a key is set both here and in `nextcloud_config`,
+# these occ-applied values win. Surplus indices are deleted when a list shrinks.
+nextcloud_trusted_domains: []
+nextcloud_trusted_proxies: []
+nextcloud_forwarded_for_headers: []

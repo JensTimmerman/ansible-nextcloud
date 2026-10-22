@@ -315,5 +315,19 @@
   loop: "{{ nextcloud_config | default({}) | dict2items }}"
   no_log: true
 
+# Typed trusted-domain/proxy lists applied via occ, AFTER the legacy
+# nextcloud_config loop so the occ values win. Guarded so a run with all three
+# lists empty performs no new tasks (no behaviour change for existing callers),
+# and so a bare role run with no Nextcloud present stays a no-op: the occ
+# config:system:* commands only exist once the instance is installed (or is
+# being installed by this very run).
+- name: "Apply the typed trusted-domain/proxy configuration via occ"
+  ansible.builtin.include_tasks: trusted.yml
+  when:
+    - nextcloud_is_installed | default(false) or nextcloud_maintenance_install | bool
+    - nextcloud_trusted_domains | length > 0 or
+      nextcloud_trusted_proxies | length > 0 or
+      nextcloud_forwarded_for_headers | length > 0
+
 - name: OnlyOffice hack
   ansible.builtin.include_tasks: onlyoffice-hack.yml
