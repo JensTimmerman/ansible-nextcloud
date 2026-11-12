@@ -141,9 +141,19 @@
     - nextcloud_is_upgrade | bool
 
 - name: "Verify the release archive checksum"
-  ansible.builtin.command:
-    cmd: "sha256sum -c {{ nextcloud_release_archive | basename }}.sha256"
+  # Nextcloud's .sha256 lists both the release tarball and the .metadata
+  # sidecar. Only the tarball is downloaded and consumed here, so verify
+  # that line alone; otherwise sha256sum -c fails on the missing sidecar
+  # (observed with nextcloud-35.0.3). If the tarball line is absent, grep
+  # exits non-zero and the task fails closed.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      grep -E '[[:space:]][*]?{{ nextcloud_release_archive | basename }}$'
+      {{ nextcloud_release_archive | basename }}.sha256
+      | sha256sum -c -
     chdir: "{{ nextcloud_destination }}"
+    executable: "/bin/bash"
   changed_when: false
   when:
     - nextcloud_prune_stale | bool
