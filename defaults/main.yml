@@ -83,6 +83,18 @@ nextcloud_admin_user: "admin"
 nextcloud_admin_password: ""
 nextcloud_data_dir: "{{ nextcloud_destination }}/nextcloud/data"
 
+# Generic lifecycle/maintenance controls (tasks/maintenance.yml).
+# Empty/neutral defaults keep existing consumers unchanged; the calling play
+# sets site-specific values.
+nextcloud_php_fpm_service: ""
+nextcloud_default_phone_region: ""
+nextcloud_maintenance_window_start: 1
+nextcloud_memcache_local: ""
+nextcloud_memcache_locking: ""
+nextcloud_server_id: ""
+nextcloud_disable_app_api: false
+nextcloud_expected_major: "{{ nextcloud_version.split('.')[0] }}"
+
 # Enable backups with the following variable
 #
 # nextcloud_backup:
