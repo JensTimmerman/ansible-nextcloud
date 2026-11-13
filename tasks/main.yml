@@ -427,3 +427,8 @@
 
 - name: OnlyOffice hack
   ansible.builtin.include_tasks: onlyoffice-hack.yml
+
+- name: "Run Nextcloud upgrade and maintenance"
+  ansible.builtin.include_tasks: maintenance.yml
+  when:
+    - nextcloud_is_installed | default(false) or nextcloud_maintenance_install | bool

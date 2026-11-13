@@ -1,0 +1,282 @@
+---
+# Generic Nextcloud lifecycle tasks: upgrade, app/DB maintenance, and
+# post-install verification. Site-specific values come from vars; external
+# URL/DNS/webproxy checks stay in the calling play.
+#
+# Included from tasks/main.yml only when the instance is installed or is
+# being installed by this role (nextcloud_maintenance_install).
+
+- name: "Read Nextcloud status before upgrade"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ status --output=json"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_status_before_upgrade"
+  changed_when: false
+  failed_when: false
+
+- name: "Run Nextcloud upgrade (occ upgrade)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ upgrade"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_upgrade"
+  changed_when: true
+  when: >-
+    (nextcloud_status_before_upgrade.stdout | default('') | trim is match('^\\{')) and
+    ((nextcloud_status_before_upgrade.stdout | from_json).needsDbUpgrade
+     | default(false) | bool)
+
+- name: "Reload php-fpm after Nextcloud upgrade"
+  become: true
+  ansible.builtin.service:
+    name: "{{ nextcloud_php_fpm_service }}"
+    state: "reloaded"
+  when:
+    - nextcloud_php_fpm_service | default('') | length > 0
+    - nextcloud_upgrade.changed | default(false)
+
+- name: "Update all enabled Nextcloud apps (occ app:update --all)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ app:update --all --no-interaction"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_app_update"
+  changed_when: false
+
+- name: "Add missing Nextcloud database columns (occ db:add-missing-columns)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ db:add-missing-columns"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_add_missing_columns"
+  changed_when: false
+
+- name: "Add missing Nextcloud database indices (occ db:add-missing-indices)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ db:add-missing-indices"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_add_missing_indices"
+  changed_when: false
+
+- name: "Add missing Nextcloud database primary keys (occ db:add-missing-primary-keys)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ db:add-missing-primary-keys"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_add_missing_primary_keys"
+  changed_when: false
+
+- name: "Run Nextcloud maintenance repair (occ maintenance:repair --include-expensive)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ maintenance:repair --include-expensive"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_maintenance_repair"
+  changed_when: false
+
+- name: "Check Nextcloud occ status (JSON)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ status --output=json"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_status"
+  changed_when: false
+  failed_when: false
+
+- name: "Assert occ status returned JSON"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_occ_status.stdout | default('') | trim is match('^\\{')"
+    fail_msg: >-
+      Nextcloud occ status did not return JSON (rc={{ nextcloud_occ_status.rc | default('?') }}).
+      The instance may not be installed or the database is unreachable.
+    quiet: true
+
+- name: "Assert occ confirms the instance is installed"
+  ansible.builtin.assert:
+    that:
+      - "(nextcloud_occ_status.stdout | from_json).installed | default(false) | bool"
+    fail_msg: >-
+      Nextcloud occ status did not report an installed instance (no or
+      invalid JSON output).
+    success_msg: "Nextcloud occ status confirms the instance is installed."
+
+- name: "Set Nextcloud default phone region"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ config:system:set default_phone_region --value={{ nextcloud_default_phone_region }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_default_phone_region"
+  changed_when: false
+  when: "nextcloud_default_phone_region | default('') | length > 0"
+
+- name: "Set Nextcloud maintenance window start"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ config:system:set maintenance_window_start --type=integer --value={{ nextcloud_maintenance_window_start }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_maintenance_window_start"
+  changed_when: false
+  when: "nextcloud_maintenance_window_start is not none"
+
+- name: "Set Nextcloud local memcache"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    argv:
+      - "php"
+      - "occ"
+      - "config:system:set"
+      - "memcache.local"
+      - "--value={{ nextcloud_memcache_local }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_memcache_local"
+  changed_when: false
+  when: "nextcloud_memcache_local | default('') | length > 0"
+
+- name: "Set Nextcloud locking memcache"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    argv:
+      - "php"
+      - "occ"
+      - "config:system:set"
+      - "memcache.locking"
+      - "--value={{ nextcloud_memcache_locking }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_memcache_locking"
+  changed_when: false
+  when: "nextcloud_memcache_locking | default('') | length > 0"
+
+- name: "Set the Nextcloud server identifier"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ config:system:set serverid --value={{ nextcloud_server_id }} --type=integer"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_serverid"
+  changed_when: false
+  when: "nextcloud_server_id | default('') | string | length > 0"
+
+- name: "Assert occ reports no pending database upgrade"
+  ansible.builtin.assert:
+    that:
+      - "not ((nextcloud_occ_status.stdout | from_json).needsDbUpgrade | default(false) | bool)"
+    fail_msg: >-
+      Nextcloud still reports needsDbUpgrade=true after occ upgrade and the
+      maintenance commands ran, so the database schema is not fully
+      migrated.
+    success_msg: "Nextcloud reports no pending database upgrade."
+
+- name: "List Nextcloud apps (occ app:list --output=json)"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ app:list --output=json"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  register: "nextcloud_occ_app_list"
+  changed_when: false
+
+- name: "Disable AppAPI when External Apps are not used"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  ansible.builtin.command:
+    cmd: "php occ app:disable app_api"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  when: >-
+    nextcloud_disable_app_api | bool and
+    'app_api' in ((nextcloud_occ_app_list.stdout | from_json).enabled
+                  | default({}) | list)
+  changed_when: true
+
+- name: "Read Nextcloud shipped.json (core app classification)"
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ nextcloud_destination }}/nextcloud/core/shipped.json"
+  register: "nextcloud_shipped_json"
+  failed_when: false
+  changed_when: false
+
+- name: "Determine which always-enabled apps are disabled"
+  # Optional bundled apps may be disabled deliberately by the owner, so a
+  # disabled bundled app is not by itself a sign of a corrupt database.
+  # Only apps listed in core/shipped.json alwaysEnabled must never be
+  # disabled; if one is, app boot is broken. If shipped.json is unreadable
+  # fall back to a minimum list taken from stable34 alwaysEnabled.
+  ansible.builtin.set_fact:
+    nextcloud_shipped_readable: >-
+      {{ (nextcloud_shipped_json.content | default('')) | length > 0 }}
+    nextcloud_always_enabled_apps: >-
+      {{ ((nextcloud_shipped_json.content | b64decode | from_json).alwaysEnabled
+          | default([]))
+         if (nextcloud_shipped_json.content | default('')) | length > 0
+         else ["appstore", "cloud_federation_api", "dav",
+               "federatedfilesharing", "files", "lookup_server_connector",
+               "oauth2", "profile", "provisioning_api", "settings",
+               "theming", "twofactor_backupcodes", "viewer",
+               "workflowengine"] }}
+    nextcloud_disabled_apps: >-
+      {{ (nextcloud_occ_app_list.stdout | from_json).disabled | default({})
+         | list }}
+
+- name: "Compute disabled always-enabled and optional apps"
+  ansible.builtin.set_fact:
+    nextcloud_disabled_always_enabled_apps: >-
+      {{ nextcloud_disabled_apps | intersect(nextcloud_always_enabled_apps) }}
+    nextcloud_disabled_optional_apps: >-
+      {{ nextcloud_disabled_apps | difference(nextcloud_always_enabled_apps) }}
+
+- name: "Warn when shipped.json is unreadable"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: core/shipped.json could not be read; using the built-in
+      minimum list of always-enabled apps instead.
+  when: "not (nextcloud_shipped_readable | bool)"
+
+- name: "Warn about disabled optional Nextcloud apps"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: these Nextcloud apps are disabled and are assumed to be
+      deliberately disabled by the owner (not failing, not re-enabling):
+      {{ nextcloud_disabled_optional_apps | join(', ') }}
+  when: "nextcloud_disabled_optional_apps | length > 0"
+
+- name: "Assert no always-enabled Nextcloud app is disabled"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_disabled_always_enabled_apps | length == 0"
+    fail_msg: >-
+      Core apps that must never be disabled are disabled after the
+      upgrade, so the database may be inconsistent and app boot can
+      abort: {{ nextcloud_disabled_always_enabled_apps | join(', ') }}.
+    success_msg: "No always-enabled Nextcloud app is disabled."
+
+- name: "Parse the Nextcloud major reported by occ status"
+  ansible.builtin.set_fact:
+    nextcloud_reported_major: >-
+      {{ (nextcloud_occ_status.stdout | from_json).versionstring
+         | default('') | regex_replace('^([0-9]+).*$', '\1') }}
+
+- name: "Assert Nextcloud reports the expected major"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_reported_major == nextcloud_expected_major"
+    fail_msg: >-
+      Nextcloud reports version {{
+      (nextcloud_occ_status.stdout | from_json).versionstring | default('unknown') }},
+      expected major {{ nextcloud_expected_major }}.
+    success_msg: >-
+      Nextcloud reports the expected major {{ nextcloud_expected_major }}.
