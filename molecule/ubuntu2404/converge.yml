@@ -19,7 +19,7 @@
     nextcloud_dir_user: "www-data"
     nextcloud_dir_group: "www-data"
     php_fpm_version: "8.3"
-    nextcloud_maintenance_install: true
+    nextcloud_install_mode: "auto"
     nextcloud_db_type: "sqlite"
     nextcloud_admin_password: "MoleculeAdminPass123"
     # Array-valued keys must not go through the legacy raw-PHP `nextcloud_config`

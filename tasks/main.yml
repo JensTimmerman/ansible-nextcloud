@@ -1,4 +1,9 @@
 ---
+# Fail-closed before anything else: validate the install mode and database
+# auth, and refuse an uninstalled target in mode=none. Read-only.
+- name: "Run the fail-closed install-mode preflight"
+  ansible.builtin.include_tasks: "preflight.yml"
+
 # https://docs.nextcloud.com/server/18/admin_manual/installation/source_installation.html#prerequisites-for-manual-installation
 - name: "Detect the modular PHP layout (Remi module stream)"
   ansible.builtin.stat:
@@ -285,28 +290,89 @@
          if (nextcloud_status.stdout | default('') | trim) is match('^\{')
          else false }}
 
-- name: "Warn when Nextcloud is not installed and automatic install is disabled"
-  ansible.builtin.debug:
-    msg: >-
-      WARNING: Nextcloud reports installed=false and
-      nextcloud_maintenance_install is false. Complete the web installer, or
-      set nextcloud_maintenance_install: true with nextcloud_admin_password
-      and the nextcloud_db_* variables to install from this role.
-  when: not nextcloud_is_installed and not nextcloud_maintenance_install | bool
+# Defence in depth: the preflight already failed mode=none for a missing
+# instance, but `occ status` is authoritative. Catch a config.php that looked
+# installed while occ (e.g. an unreachable database) reports otherwise, so the
+# play can never stay green with changed=0 and no instance.
+- name: "Fail closed when nextcloud_install_mode is none and occ reports not installed"
+  ansible.builtin.fail:
+    msg: "{{ nextcloud_install_none_fail_msg }}"
+  when:
+    - nextcloud_install_mode_effective == 'none'
+    - not nextcloud_is_installed | bool
 
-- name: "Validate the fresh-install inputs"
+- name: "Refresh the skipped flag from the authoritative installation state"
+  ansible.builtin.set_fact:
+    nextcloud_install_skipped: >-
+      {{ (nextcloud_install_mode_effective == 'web') and
+         not (nextcloud_is_installed | bool) }}
+  changed_when: false
+
+# Single gate for everything that needs a working instance: it is installed
+# now, or this run is installing it in auto mode.
+- name: "Compute whether an installed instance is available or being installed"
+  ansible.builtin.set_fact:
+    nextcloud_manage_installation: >-
+      {{ (nextcloud_is_installed | bool) or
+         (nextcloud_install_mode_effective == 'auto') }}
+  changed_when: false
+
+- name: "Probe the PostgreSQL connection before a fresh install"
+  ansible.builtin.command:
+    argv:
+      - "php"
+      - "-r"
+      - |
+        $host = getenv('NEXTCLOUD_DB_HOST');
+        $port = getenv('NEXTCLOUD_DB_PORT') ?: '5432';
+        if (strpos($host, 'localhost:') === 0) {
+            $host = substr($host, 10);
+            $port = '5432';
+        } elseif (strpos($host, '/') === false && strpos($host, ':') !== false) {
+            [$host, $port] = explode(':', $host, 2);
+        }
+        $dsn = sprintf('host=%s port=%s dbname=%s user=%s connect_timeout=5',
+            $host, $port, getenv('NEXTCLOUD_DB_NAME'), getenv('NEXTCLOUD_DB_USER'));
+        if (@pg_connect($dsn) === false) {
+            fwrite(STDERR, 'pg_connect failed');
+            exit(1);
+        }
+    environment:
+      NEXTCLOUD_DB_HOST: "{{ nextcloud_db_host }}"
+      NEXTCLOUD_DB_NAME: "{{ nextcloud_db_name }}"
+      NEXTCLOUD_DB_USER: "{{ nextcloud_db_user }}"
+      PGPASSWORD: "{{ nextcloud_db_password }}"
+    chdir: "{{ nextcloud_destination }}/nextcloud"
+  become: true
+  become_user: "{{ nextcloud_dir_user }}"
+  register: "nextcloud_db_preflight"
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - nextcloud_install_mode_effective == 'auto'
+    - not nextcloud_is_installed | bool
+    - nextcloud_db_type == 'pgsql'
+
+- name: "Fail when the PostgreSQL preflight connection failed"
   ansible.builtin.assert:
     that:
-      - "nextcloud_admin_password | length > 0"
-      - "nextcloud_db_password | length > 0 or nextcloud_db_type == 'sqlite'"
+      - "nextcloud_db_preflight.rc | default(1) | int == 0"
     fail_msg: >-
-      nextcloud_maintenance_install is true but the admin password is empty
-      and/or the database password is empty (allowed only for sqlite).
+      Cannot connect to PostgreSQL as {{ nextcloud_db_user }} on
+      {{ nextcloud_db_host }} (database {{ nextcloud_db_name }}, auth
+      {{ nextcloud_db_auth }}) as {{ nextcloud_dir_user }}. For peer auth,
+      verify the socket directory is reachable and the OS user matches the
+      database role; for password auth, check nextcloud_db_password and
+      pg_hba.conf.
     quiet: true
   when:
-    - nextcloud_maintenance_install | bool
-    - not nextcloud_is_installed
+    - nextcloud_db_preflight is defined
+    - not (nextcloud_db_preflight.skipped | default(false) | bool)
 
+# Keep --database-pass in the argv even for peer auth: the option is optional
+# and occ prompts interactively when it is absent, hanging a non-interactive
+# run. An empty value tells it to connect without a password (libpq peer auth).
 - name: "Install Nextcloud (fresh instance)"
   ansible.builtin.command:
     argv: >-
@@ -314,20 +380,20 @@
           '--database=' ~ nextcloud_db_type,
           '--database-name=' ~ nextcloud_db_name,
           '--database-user=' ~ nextcloud_db_user,
-          '--database-pass=' ~ nextcloud_db_password,
-          '--admin-user=' ~ nextcloud_admin_user,
-          '--admin-pass=' ~ nextcloud_admin_password,
-          '--data-dir=' ~ nextcloud_data_dir]
+          '--database-pass=' ~ nextcloud_db_password]
          + (['--database-host=' ~ nextcloud_db_host]
-            if nextcloud_db_type != 'sqlite' else []) }}
+            if nextcloud_db_type != 'sqlite' else [])
+         + ['--admin-user=' ~ nextcloud_admin_user,
+            '--admin-pass=' ~ nextcloud_admin_password,
+            '--data-dir=' ~ nextcloud_data_dir] }}
     chdir: "{{ nextcloud_destination }}/nextcloud"
   become: true
   become_user: "{{ nextcloud_dir_user }}"
   no_log: true
   changed_when: true
   when:
-    - nextcloud_maintenance_install | bool
-    - not nextcloud_is_installed
+    - nextcloud_install_mode_effective == 'auto'
+    - not nextcloud_is_installed | bool
 
 - name: Setup nextcloud cron to run every 5 minutes
   ansible.builtin.cron:
@@ -335,6 +401,7 @@
     minute: "*/5"
     user: "{{ nextcloud_dir_user }}"
     job: "/usr/bin/php -f {{ nextcloud_destination }}/nextcloud/cron.php"
+  when: nextcloud_manage_installation | bool
 
 # memory_limit: Nextcloud recommends at least 512M. The modular layout reads
 # /etc/php.d, so write a drop-in there; the legacy layout is edited in place.
@@ -364,7 +431,9 @@
 
 - name: Setup automatic daily backups
   ansible.builtin.include_tasks: backups.yml
-  when: nextcloud_backup is defined
+  when:
+    - nextcloud_backup is defined
+    - nextcloud_manage_installation | bool
 
 - name: Check config file status
   ansible.builtin.stat:
@@ -381,6 +450,7 @@
   when:
     - nextcloud_config is defined
     - not nextcloud_config_file.stat.exists
+    - nextcloud_manage_installation | bool
 
 # The legacy lineinfile inserts before the closing `);` line, so it must only
 # run on a file that actually has one. The earlier repair already guarantees
@@ -399,7 +469,9 @@
   changed_when: false
   failed_when: false
   no_log: true
-  when: nextcloud_config is defined
+  when:
+    - nextcloud_config is defined
+    - nextcloud_manage_installation | bool
 
 - name: Configure Nextcloud installation
   ansible.builtin.lineinfile:
@@ -409,7 +481,9 @@
     insertbefore: '^\);$'
   loop: "{{ nextcloud_config | default({}) | dict2items }}"
   no_log: true
-  when: nextcloud_config_closing_line.rc | default(1) | int == 0
+  when:
+    - nextcloud_config_closing_line.rc | default(1) | int == 0
+    - nextcloud_manage_installation | bool
 
 # Typed trusted-domain/proxy lists applied via occ, AFTER the legacy
 # nextcloud_config loop so the occ values win. Guarded so a run with all three
@@ -420,7 +494,7 @@
 - name: "Apply the typed trusted-domain/proxy configuration via occ"
   ansible.builtin.include_tasks: trusted.yml
   when:
-    - nextcloud_is_installed | default(false) or nextcloud_maintenance_install | bool
+    - nextcloud_manage_installation | bool
     - nextcloud_trusted_domains | length > 0 or
       nextcloud_trusted_proxies | length > 0 or
       nextcloud_forwarded_for_headers | length > 0
@@ -430,5 +504,4 @@
 
 - name: "Run Nextcloud upgrade and maintenance"
   ansible.builtin.include_tasks: maintenance.yml
-  when:
-    - nextcloud_is_installed | default(false) or nextcloud_maintenance_install | bool
+  when: nextcloud_manage_installation | bool
