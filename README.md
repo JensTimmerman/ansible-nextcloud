@@ -1,8 +1,8 @@
 > **Maintained fork.** This is the maintained fork of
 > [swcc/ansible-nextcloud](https://github.com/swcc/ansible-nextcloud), which is
 > unmaintained (last commit 2020). This fork adds Remi modular PHP support,
-> fresh-install support, release-manifest pruning and CI (Molecule on Rocky 9
-> and Ubuntu 24.04).
+> fresh-install support with fail-closed install modes, release-manifest
+> pruning and CI (Molecule on Rocky 9 and Ubuntu 24.04).
 
 
 ## php-fpm dependency
@@ -47,6 +47,9 @@ Role parameters
 | `nextcloud_dir_user`                      | `www-data` | `string`        | Which unix user should own the installed directory                                                                                                                                                                                                                                              |
 | `nextcloud_dir_group`                     | `www-data` | `string`        | Which unix group should own the installed directory                                                                                                                                                                                                                                             |
 | `nextcloud_php_memory_limit`              | `512M`     | `string`        | Php memory_limit setting. Default recommanded by Nextcloud is 512M.                                                                                                                                                                                                                             |
+| `nextcloud_install_mode`                  | `none`     | `string`        | Fail-closed install behaviour when Nextcloud is not installed: `none` fails before any change, `web` deploys only and skips install/config, `auto` runs `occ maintenance:install`. See [Install modes](#install-modes-fail-closed).                                                              |
+| `nextcloud_db_auth`                       | `password` | `string`        | Database authentication for the fresh-install preflight: `password` (non-empty `nextcloud_db_password`) or `peer` (PostgreSQL over a Unix socket only, empty password allowed).                                                                                                                    |
+| `nextcloud_maintenance_install`           | `false`    | `bool`          | **Deprecated.** `true` implies `nextcloud_install_mode: auto` when `nextcloud_install_mode` is not set. Use `nextcloud_install_mode` instead.                                                                                                                                                    |
 | `nextcloud_config`                        | `{}`       | `dict`          | a dict object of key values to set in the `config/config.php` file of Nextcloud. Beware of the content as they need to be valid PHP values. E.g. a string should be defined in your ansible dictionnary as `"'mystring'"` for the value to be the litteral `'mystring'` in the config.php file. |
 | `nextcloud_trusted_domains`               | `[]`       | `list`          | List of trusted domains applied idempotently via `occ config:system:set trusted_domains <i> --value=<item>` as the Nextcloud owner. Empty list = no-op. Applied **after** `nextcloud_config`, so when both set `trusted_domains` the values here win. Surplus indices are deleted (`occ config:system:delete`) when the list shrinks.                                                                                              |
 | `nextcloud_trusted_proxies`               | `[]`       | `list`          | List of trusted reverse proxies, applied via `occ` exactly like `nextcloud_trusted_domains` (key `trusted_proxies`). Empty list = no-op.                                                                                                                                                                                                                          |
@@ -96,6 +99,56 @@ php_fpm_pools:
       TMP: "/tmp"
       HOSTNAME: "$HOSTNAME"
 ```
+
+Install modes (fail-closed)
+---------------------------
+
+`nextcloud_install_mode` controls what happens when Nextcloud is not
+installed (`version.php`/`config.php` report `installed=false`). The
+preflight runs before any package, directory, download or configuration task,
+so a missing instance can no longer leave the play green with `changed=0`.
+
+| Mode   | Behaviour when Nextcloud is not installed |
+| ------ | ----------------------------------------- |
+| `none` (default) | The role **fails before any change** with remediation instructions: complete the web installer, use `web`, or use `auto` with credentials. |
+| `web`  | The role deploys the release, prints `skipped (mode=web)`, and skips `occ maintenance:install` plus post-install configuration (cron, config.php edits, trusted domains, maintenance). Finish the setup in the browser at `https://<host>/index.php`, then rerun the role. |
+| `auto` | The role runs `occ maintenance:install` when the instance is missing, then applies the normal configuration. Requires `nextcloud_admin_password` and database credentials. |
+
+When the instance is already installed, every mode manages it normally: the
+preflight only decides what to do for a missing instance. Upgrades and release
+deployment are not affected.
+
+`nextcloud_maintenance_install: true` is deprecated. When
+`nextcloud_install_mode` is not set explicitly, it still resolves to `auto`,
+so existing playbooks keep working; setting `nextcloud_install_mode`
+explicitly wins. The role logs a deprecation warning whenever the old flag is
+used.
+
+This is deliberately a behaviour change: an uninstalled host with
+`nextcloud_maintenance_install: false` used to produce only a warning while
+the play stayed green. It now fails in the default `none` mode. Playbooks that
+deploy the release and use the browser installer should set
+`nextcloud_install_mode: web`.
+
+Database authentication
+-----------------------
+
+`nextcloud_db_auth` selects how the fresh-install path connects to the
+database:
+
+- `password` (default): `nextcloud_db_password` must be non-empty. An empty
+  password remains allowed for `sqlite`.
+- `peer`: only supported with `nextcloud_db_type: pgsql` and a Unix-socket
+  host (`/var/run/postgresql` or `localhost:/var/run/postgresql`). An empty
+  `nextcloud_db_password` is allowed; PostgreSQL authenticates the OS user
+  running `occ` (`nextcloud_dir_user`).
+
+Before `occ maintenance:install`, the role probes the PostgreSQL connection
+as `nextcloud_dir_user` with `pg_connect` (mode `auto` and PostgreSQL only).
+The probe is read-only and fails with an actionable message when the socket,
+database role or password is wrong. For `peer`, ensure the socket directory is
+reachable by `nextcloud_dir_user` and that its OS user matches the database
+role.
 
 config.php repair
 -----------------

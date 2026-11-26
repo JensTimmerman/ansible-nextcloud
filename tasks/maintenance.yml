@@ -4,7 +4,7 @@
 # URL/DNS/webproxy checks stay in the calling play.
 #
 # Included from tasks/main.yml only when the instance is installed or is
-# being installed by this role (nextcloud_maintenance_install).
+# being installed by this role (nextcloud_install_mode=auto).
 
 - name: "Read Nextcloud status before upgrade"
   become: true

@@ -68,17 +68,32 @@ nextcloud_prune_stale: false
 # Abort instead of deleting if more than this many stale files are found.
 nextcloud_stale_max_files: 5000
 
-# Fresh-install support. The role historically assumed an instance already
-# installed (by the web installer): config.php.j2 was empty. With
-# nextcloud_maintenance_install: true the role runs `occ maintenance:install`
-# when the target reports installed=false, then continues with the normal
-# configuration tasks. Idempotent: it only runs when not installed.
+# Installation mode (fail-closed):
+#   none - an installed instance is required. When version.php/config.php show
+#          installed=false the role fails before any package, directory,
+#          download or configuration task.
+#   web  - deploy the release, report "skipped (mode=web)", and skip
+#          `occ maintenance:install` plus post-install configuration. Finish
+#          the setup in the browser and rerun the role.
+#   auto - run `occ maintenance:install` when installed=false, then continue
+#          with the normal configuration tasks. Requires
+#          nextcloud_admin_password and database credentials.
+#
+# nextcloud_maintenance_install is deprecated: when it is true and
+# nextcloud_install_mode is not explicitly set, the mode resolves to auto for
+# backward compatibility. Otherwise the default is none.
 nextcloud_maintenance_install: false
+nextcloud_install_mode: "{{ 'auto' if nextcloud_maintenance_install | bool else 'none' }}"
 nextcloud_db_type: "pgsql"
 nextcloud_db_host: "localhost"
 nextcloud_db_name: "nextcloud"
 nextcloud_db_user: "nextcloud"
 nextcloud_db_password: ""
+# Database authentication for the fresh-install preflight and install:
+#   password - nextcloud_db_password must be non-empty (sqlite excepted).
+#   peer     - PostgreSQL only, with a Unix-socket host ('/path' or
+#              'localhost:/path'); an empty nextcloud_db_password is allowed.
+nextcloud_db_auth: "password"
 nextcloud_admin_user: "admin"
 nextcloud_admin_password: ""
 nextcloud_data_dir: "{{ nextcloud_destination }}/nextcloud/data"

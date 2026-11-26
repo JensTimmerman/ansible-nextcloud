@@ -27,6 +27,8 @@ jobs:
         run: "yamllint ."
       - name: "PHP config template integrity"
         run: "python3 tests/check_config_template.py"
+      - name: "Install-mode fail-closed regression tests"
+        run: "python3 tests/test_install_modes.py"
       - name: "ansible-lint (production profile)"
         run: "ansible-lint"
 

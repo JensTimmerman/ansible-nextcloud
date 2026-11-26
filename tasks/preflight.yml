@@ -1,0 +1,128 @@
+---
+# Fail-closed install-mode preflight.
+#
+# This file runs before any package, directory, download or configuration
+# task. It is read-only: it derives the installation state from version.php
+# and config.php, then validates the install-mode and database-auth inputs.
+# A misconfigured or unsupported run therefore stops before touching the
+# host.
+#
+# nextcloud_install_mode:
+#   none - an installed instance is required; fail when it is missing.
+#   web  - deploy the release, then skip install and post-install config.
+#   auto - run `occ maintenance:install` when the instance is missing.
+
+- name: "Resolve the effective install mode"
+  ansible.builtin.set_fact:
+    nextcloud_install_mode_effective: "{{ nextcloud_install_mode | default('none') | string | trim }}"
+  changed_when: false
+
+- name: "Validate nextcloud_install_mode"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_install_mode_effective in ['none', 'web', 'auto']"
+    fail_msg: >-
+      nextcloud_install_mode must be one of none, web or auto
+      (got '{{ nextcloud_install_mode_effective }}').
+    quiet: true
+
+- name: "Warn that nextcloud_maintenance_install is deprecated"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: nextcloud_maintenance_install is deprecated and will be removed.
+      Use nextcloud_install_mode: auto instead.
+  when: "nextcloud_maintenance_install | default(false) | bool"
+
+- name: "Validate nextcloud_db_auth"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_db_auth in ['password', 'peer']"
+      - "nextcloud_db_auth != 'peer' or nextcloud_db_type == 'pgsql'"
+      - "nextcloud_db_auth != 'peer' or nextcloud_db_host is match('^(/|localhost:/)')"
+    fail_msg: >-
+      nextcloud_db_auth must be password or peer; peer is only supported for
+      nextcloud_db_type=pgsql with a Unix-socket host ('/path' or
+      'localhost:/path'). Got auth={{ nextcloud_db_auth }},
+      type={{ nextcloud_db_type }}, host={{ nextcloud_db_host }}.
+    quiet: true
+
+- name: "Stat the Nextcloud version file before any change"
+  ansible.builtin.stat:
+    path: "{{ nextcloud_destination }}/nextcloud/version.php"
+  register: "nextcloud_preflight_version"
+  changed_when: false
+
+- name: "Stat config.php before any change"
+  ansible.builtin.stat:
+    path: "{{ nextcloud_destination }}/nextcloud/config/config.php"
+  register: "nextcloud_preflight_config"
+  changed_when: false
+  no_log: true
+
+- name: "Read config.php before any change"
+  ansible.builtin.slurp:
+    src: "{{ nextcloud_destination }}/nextcloud/config/config.php"
+  register: "nextcloud_preflight_config_slurp"
+  no_log: true
+  when: "nextcloud_preflight_config.stat.exists | default(false)"
+
+# version.php alone is not enough: an extracted but uninstalled release has
+# one too. Nextcloud writes `'installed' => true` into config.php when the
+# installer completes, which is the same flag `occ status` reads. Reading the
+# file keeps this check independent of PHP being installed yet.
+- name: "Determine whether Nextcloud is installed before any change"
+  ansible.builtin.set_fact:
+    nextcloud_is_installed: >-
+      {{ (nextcloud_preflight_version.stat.exists | default(false)) and
+         (nextcloud_preflight_config.stat.exists | default(false)) and
+         (((nextcloud_preflight_config_slurp.content | default('')) | b64decode)
+          is search("'installed'\s*=>\s*true")) }}
+  changed_when: false
+
+- name: "Record whether the install and configuration phase is skipped"
+  ansible.builtin.set_fact:
+    nextcloud_install_skipped: >-
+      {{ (nextcloud_install_mode_effective == 'web') and
+         not (nextcloud_is_installed | default(false) | bool) }}
+    nextcloud_install_none_fail_msg: >-
+      nextcloud_install_mode=none requires an installed Nextcloud instance,
+      but {{ nextcloud_destination }}/nextcloud reports installed=false.
+      Complete the web installer, or set nextcloud_install_mode=web to deploy
+      the release and finish in the browser, or nextcloud_install_mode=auto
+      with nextcloud_admin_password and the nextcloud_db_* values.
+  changed_when: false
+
+- name: "Fail closed when no install mode allows an uninstalled instance"
+  ansible.builtin.fail:
+    msg: "{{ nextcloud_install_none_fail_msg }}"
+  when:
+    - nextcloud_install_mode_effective == 'none'
+    - not (nextcloud_is_installed | default(false) | bool)
+
+- name: "Report that installation and configuration are skipped in web mode"
+  ansible.builtin.debug:
+    msg: >-
+      Nextcloud reports installed=false; skipped (mode=web): install
+      (occ maintenance:install) and post-install configuration are skipped.
+      The release is deployed only; finish the setup in a browser at
+      https://<host>/index.php, then rerun the role to apply configuration.
+  when:
+    - nextcloud_install_mode_effective == 'web'
+    - not (nextcloud_is_installed | default(false) | bool)
+
+- name: "Validate the fresh-install credentials"
+  ansible.builtin.assert:
+    that:
+      - "nextcloud_admin_password | default('') | length > 0"
+      - >-
+        nextcloud_db_password | default('') | length > 0 or
+        nextcloud_db_type == 'sqlite' or
+        nextcloud_db_auth == 'peer'
+    fail_msg: >-
+      nextcloud_install_mode=auto with installed=false requires a non-empty
+      nextcloud_admin_password and nextcloud_db_password (an empty database
+      password is only allowed for sqlite or nextcloud_db_auth=peer).
+    quiet: true
+  when:
+    - nextcloud_install_mode_effective == 'auto'
+    - not (nextcloud_is_installed | default(false) | bool)
